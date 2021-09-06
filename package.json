@@ -1,0 +1,28 @@
+{
+  "name": "datamoves",
+  "version": "0.1.0",
+  "description": "Interactive cheat sheet for data moves",
+  "main": "index.js",
+  "scripts": {
+    "dev": "snowpack dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/salmenf/datamoves.git"
+  },
+  "author": "Frederic Salmen",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/salmenf/datamoves/issues"
+  },
+  "homepage": "https://github.com/salmenf/datamoves#readme",
+  "devDependencies": {
+    "snowpack": "^3.8.8"
+  },
+  "dependencies": {
+    "ionicons": "^5.5.3",
+    "lit": "^2.0.0-rc.4",
+    "peggy": "^1.2.0",
+    "pyodide": "^0.18.0"
+  }
+}
