@@ -2,6 +2,6 @@
 export default {
   mount: {
     "./source/": {url: "/"},
-    "./python/": {url: "/python/", static: true}
+    "./static/": {url: "/static/", static: true}
   }
 }
