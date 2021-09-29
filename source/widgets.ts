@@ -1,11 +1,11 @@
 import "@vaadin/vaadin-grid"
-import {LitElement, html, css} from "lit"
+import {LitElement, html, css, CSSResult, CSSResultArray} from "lit"
 import {customElement, property, query, state} from "lit/decorators.js"
 import {unsafeSVG} from 'lit/directives/unsafe-svg.js'
 import * as FLAGS from 'country-flag-icons/string/3x2'
 import { Scenario } from "./scenarios"
 import "ionicons"
-import { LABELS, Language } from "./localization"
+import { getLabel, LabelKey, Language } from "./localization"
 
 @customElement("dm-dataset-view")
 export class DatasetView extends LitElement {}
@@ -53,8 +53,16 @@ export class LanguagePicker extends LitElement {
       border-bottom: 3px dotted cornflowerblue;
     }
 
+    label:active {
+      border-bottom: 3px dotted darkblue;
+    }
+
     input[type="radio"]:checked + label {
       border-bottom: 3px solid cornflowerblue;
+    }
+
+    input[type="radio"]:checked:active + label {
+      border-bottom: 3px solid darkblue;
     }
   `
 
@@ -83,14 +91,17 @@ export class LanguagePicker extends LitElement {
 @customElement("dm-scenario-picker")
 export class ScenarioPicker extends LitElement {
 
+  @property()
+  lang: Language
+
   @property({attribute: false})
   scenarios: Scenario[]
 
   @state()
-  selectedIndex: number
+  selectedIndex: number = null
 
   get value() {
-    return this.scenarios[this.selectedIndex]
+    return this.selectedIndex !== null? this.scenarios[this.selectedIndex]: null
   }
 
   @query('input[name="radio"]:checked')
@@ -122,8 +133,17 @@ export class ScenarioPicker extends LitElement {
       border-bottom: 3px dotted cornflowerblue;
     }
 
+    label:active {
+      border-bottom: 3px dotted darkblue;
+    }
+
+
     input[type="radio"]:checked + label {
       border-bottom: 3px solid cornflowerblue;
+    }
+
+    input[type="radio"]:checked:active + label {
+      border-bottom: 3px solid darkblue;
     }
 
     label.sandbox {
@@ -137,8 +157,6 @@ export class ScenarioPicker extends LitElement {
   }
 
   render() {
-    const sandboxIcon = html`<ion-icon style="pointer-events: none;" name="easel-outline"></ion-icon>`
-
     return this.scenarios.map((scenario, i) => html`
       <input
         type="radio"
@@ -149,64 +167,190 @@ export class ScenarioPicker extends LitElement {
         @change=${this.handleChange}
       >
       <label class=${scenario.isSandbox? "sandbox": ""} for=${i}>
-        ${scenario.name}
+        ${getLabel(this.lang, scenario.name as LabelKey)}
       </label>
     `)
 
   }
 }
 
-@customElement("dm-scenario-controls")
-export class ScenarioControls extends LitElement {
+@customElement("dm-message")
+class Message extends LitElement {
 
-  @property({type: String})
-  lang: Language
-
-  @property({type: Boolean})
-  isPlaying: boolean
-
-  static styles = css`
+  static styles: CSSResult | CSSResultArray = css`
     :host {
-      display: flex;
-      justify-content: flex-end;
-      gap: 0.6rem;
-    }
-
-    button {
-      border: none;
-      font-size: 1rem;
+      overflow-wrap: break-word;
+      background: lightblue;
+      padding: 0.425rem;
+      font-size: 0.6rem;
+      max-width: 350px;
+      position: relative;
+      margin-left: 10px;
+      box-sizing: border-box;
+      height: 100%;
       display: flex;
       flex-direction: column;
-      justify-content: flex-end;
-      cursor: pointer;
+      justify-content: center;
+      align-items: center;
     }
 
-    button:hover {
-      color: cornflowerblue;
+    :host(.fade-in) {
+      opacity: 1;
+      animation-name: fadeIn;
+      animation-iteration-count: 1;
+      animation-timing-function: ease-in;
+      animation-duration: 0.5s;
     }
 
-    button:active {
-      color: darkblue;
+    @keyframes fadeIn {
+      0% {opacity: 0}
+      100% {opacity: 1}
+    }
+
+    #triangle-left {
+      position: absolute;
+      top: calc(50% - 5px);
+      left: -10px;
+      width: 0;
+      height: 0;
+      margin-left: 2px;
+      border-top: 5px solid transparent;
+      border-right: 10px solid lightblue;
+      border-bottom: 5px solid transparent;
     }
   `
 
   render() {
     return html`
-      <button title=${LABELS[this.lang].reset}>
-      <ion-icon name="arrow-undo" style="pointer-events: none;"></ion-icon>
-      </button>
-      <button title=${LABELS[this.lang].back}>
-        <ion-icon name="play-skip-back" style="pointer-events: none;"></ion-icon>
-      </button>
-      <button title=${LABELS[this.lang].play}>
-        <ion-icon name="play" style="pointer-events: none;"></ion-icon>
-      </button>
-      <button title=${LABELS[this.lang].forward}>
-        <ion-icon name="play-skip-forward" style="pointer-events: none;"></ion-icon>
-      </button>
-      <button title=${LABELS[this.lang].stop}>
-        <ion-icon name="stop" style="pointer-events: none;"></ion-icon>
-      </button>
+      <slot></slot>
+      <div id="triangle-left"></div>
+    `
+  }
+}
+
+@customElement("dm-error-message")
+export class ErrorMessage extends Message {
+
+  static styles = [Message.styles, css`
+    :host {
+      background: lightcoral;
+    }
+    #triangle-left {
+      border-right: 10px solid lightcoral;
+    }
+  `]
+}
+
+@customElement("dm-pyodide-status")
+class PyodideStatus extends LitElement {
+
+  @property()
+  lang: Language
+
+  @property({attribute: false})
+  pyodide: any
+
+  static styles = css`
+
+    :host {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+    }
+
+    ion-icon {
+      font-size: 1.5rem;
+    }
+
+    ion-icon.loading {
+      animation: blinker 2s linear infinite;
+    }
+
+    @keyframes blinker {
+      50% {color: darkred}
+    }
+  `
+
+  render() {
+    this.title = getLabel(this.lang, !this.pyodide? "pythonLoading": "pythonReady")
+    return html`<ion-icon 
+      style="pointer-events: none"
+      name="logo-python">
+    </ion-icon>`
+  }
+}
+
+@customElement("dm-spinner")
+class Spinner extends LitElement {
+
+  static styles = css`
+    :host {
+      display: inline-block;
+      position: relative;
+      width: 80px;
+      height: 80px;
+    }
+    div {
+      box-sizing: border-box;
+      display: block;
+      position: absolute;
+      width: 64px;
+      height: 64px;
+      margin: 8px;
+      border: 8px solid seagreen;
+      border-radius: 50%;
+      animation: lds-ring 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+      border-color: seagreen transparent transparent transparent;
+    }
+    div:nth-child(1) {
+      animation-delay: -0.45s;
+    }
+    div:nth-child(2) {
+      animation-delay: -0.3s;
+    }
+    div:nth-child(3) {
+      animation-delay: -0.15s;
+    }
+    @keyframes lds-ring {
+      0% {
+        transform: rotate(0deg);
+      }
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+  `
+  render() {
+    return html`<div></div><div></div><div></div><div></div>`
+  }
+}
+
+@customElement("dm-loading-overlay")
+class LoadingOverlay extends LitElement {
+
+  static styles = css`
+    :host {
+      display: flex;
+      flex-direction: column;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      justify-content: center;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.5);
+      color: darkgreen;
+    }
+  `
+
+  @property()
+  message: string
+
+  render() {
+    return html`
+      <dm-spinner></dm-spinner>
+      <span>${this.message}</span>
     `
   }
 }
