@@ -1,19 +1,35 @@
 import {LitElement, html, css, TemplateResult} from "lit"
 import {customElement, property, query, queryAsync, state, queryAssignedNodes, queryAll} from "lit/decorators.js"
-import { Language, getLabel, LabelKey } from "./localization"
-import { Scenario } from "./scenarios"
+import {unsafeHTML} from "lit/directives/unsafe-html.js"
+import {styleMap} from "lit/directives/style-map.js"
+import {classMap} from 'lit/directives/class-map.js';
+import { Language, LABELS, LabelKey, TEXT_PATTERNS } from "./localization"
+import { Dataset, Scenario, ScenarioStyle } from "./scenarios"
+import "@vaadin/vaadin-grid"
 
+export const pythonIdentifierPattern = /\s*[a-zA-CE-Z_]\w*\s*/
+export const anythingPattern = /.*/
+export const nothingPattern = /a^/
 
-export const pythonIdentifierPattern = /\s*[a-zA-Z_]\w*\s*/
-
-export interface OperationNode<R=string> extends Node {
-  expression: string
-  identifier: R
-  run(): R
+const castValue = (value: any) => {
+  if(value?.type === "DataFrame") {
+    let records = JSON.parse(value.to_json(undefined, "records"))
+    return records.map(entry => Object.fromEntries(Object.entries(entry)
+      .map(([key, value]) => [key.replace(/\./g, "․"), value])
+    ))
+  }
+  else {
+    return value
+  }
 }
+
+
 
 @customElement("dm-operation-sequence-editor")
 export class PythonOperationSequenceEditor extends LitElement {
+
+  @queryAll("dm-python-operation-node")
+  operationNodes: NodeListOf<PythonOperationNode>
 
   @property({attribute: false})
   pyodide: any
@@ -30,8 +46,61 @@ export class PythonOperationSequenceEditor extends LitElement {
   @property({attribute: false})
   scenario: Scenario
 
+  @property()
+  scenarioContinueSelector: string = null
+
+  @property({type: Boolean})
+  datasetsHidden = false
+
   @state()
   scenarioStep: number = -1
+
+  @state()
+  scenarioStopped: boolean = false
+
+  querySelectorAllNodes = (query: string) => {
+    return [
+      ...this.shadowRoot.querySelectorAll(query),
+      ...[...this.operationNodes].flatMap(n =>
+        [...n.shadowRoot.querySelectorAll(query)])
+    ]
+  }
+
+
+  async updated(changedProperties) {
+    await Promise.all([...this.operationNodes].map(n => n.updateComplete))
+    if(this.scenarioContinueSelector) {
+      const continueElements = 
+        this.querySelectorAllNodes(this.scenarioContinueSelector)
+        .flatMap(el => ["identifier", "expression"].includes(el["name"])
+          ? [el, el.nextElementSibling]
+          : [el]
+        )
+      for(const continueElement of continueElements) {
+        "disabled" in continueElement
+          ? (continueElement as any).disabled = false
+          : null
+        continueElement.addEventListener("mousedown", this.stepScenario, true)
+        continueElement.classList.add("continue")
+      }
+    }
+    if(changedProperties.has("scenarioContinueSelector")) {
+      const query = changedProperties.get("scenarioContinueSelector")
+      const oldContinueElements = 
+        this.querySelectorAllNodes(query)
+        .flatMap(el => ["identifier", "expression"].includes(el["name"])
+          ? [el, el.nextElementSibling]
+          : [el]
+        )
+      for(const oldContinueElement of oldContinueElements) {
+        "disabled" in oldContinueElement
+          ? (oldContinueElement as any).disabled = true
+          : null
+        oldContinueElement.removeEventListener("mousedown", this.stepScenario, true)
+        oldContinueElement.classList.remove("continue")
+      }
+    }
+  }
 
   setIdentifier(identifier: string, i: number) {
     const statements = [...this.statements]
@@ -47,11 +116,15 @@ export class PythonOperationSequenceEditor extends LitElement {
 
   removeStatement(i: number) {
     const statements = [...this.statements]
-    statements.splice(i, 1)
+    const [identifier] = statements.splice(i, 1)[0]
+    try {
+      this.pyodide.globals.delete(identifier)
+    }
+    catch(e) {}
     this.statements = statements
   }
 
-  insertStatement(statement: [string, string], i: number) {
+  insertStatement(statement: [string, string], i: number = this.statements.length - 1) {
     const statements = [...this.statements]
     statements.splice(i + 1, 0, statement)
     this.statements = statements
@@ -65,16 +138,33 @@ export class PythonOperationSequenceEditor extends LitElement {
     this.explainer = null
     this.statements = []
     this.scenarioStep = -1
+    this.scenarioStopped = false
+    this.scenarioContinueSelector = null
   } 
 
-  stepScenario = () => {
-    this.scenario.program[this.scenarioStep + 1](this)
-    this.scenarioStep = this.scenarioStep + 1 
+  stepScenario = async () => {
+    this.scenarioStep = this.scenarioStep + 1
+    await Promise.all([...this.operationNodes].map(n => n.updateComplete))
+    await this.updateComplete
+    if(this.scenarioStep < this.scenario.program.length) {
+      const task = this.scenario.program[this.scenarioStep]
+      this.scenarioContinueSelector = await task(this)
+    }
+    else {
+      this.stopScenario()
+      this.requestUpdate()
+    }
   }
 
-  skipScenario = () => {
-    this.scenario.program.slice(this.scenarioStep).forEach(task => task(this))
-    this.scenarioStep = this.scenario.program.length - 1
+  stopScenario = () => {
+    this.scenarioStopped = true
+    this.scenarioContinueSelector = null
+  }
+
+  skipScenario = async () => {
+    for(let i = 0; i <= this.scenario.program.length; i++) {
+      await this.stepScenario()
+    } 
   }
 
   static styles = css`
@@ -85,14 +175,29 @@ export class PythonOperationSequenceEditor extends LitElement {
 
     :host {
       gap: 0.5rem;
+      font-family: 'Segoe UI', Tahoma, Verdana, sans-serif;
     }
 
     header {
       display: flex;
-      margin-left: 40px;
+      margin-left: 32px;
       flex-direction: row;
-      justify-content: space-between;
-      padding-right: 30px;
+      justify-content: flex-end;
+      margin-bottom: 10px;
+    }
+
+    header > #explainer {
+      flex-grow: 1;
+    }
+
+    header > dm-dataset-list {
+      flex-grow: 1;
+      justify-content: flex-end;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 0;
+      column-gap: 0.5rem;
+      margin-left: 2rem;
     }
 
     span {
@@ -110,8 +215,8 @@ export class PythonOperationSequenceEditor extends LitElement {
     #statements button {
       border: none;
       font-size: 24px;
-      margin-left: 40px;
-      width: 242.4px;
+      margin-left: 32px;
+      width: 232.64px;
       display: inline-flex;
       opacity: 0;
       justify-content: flex-start;
@@ -120,29 +225,36 @@ export class PythonOperationSequenceEditor extends LitElement {
       background: white;
     }
 
+    #statements button:disabled {
+      opacity: 0 !important;
+      cursor: default;
+    }
+
     #statements button:last-of-type:not(:first-child) {
-      margin-top: 30px;
-      height: 40px;
+      margin-top: 32px;
+      height: 32px;
       opacity: 0.4;
     }
 
     #statements button:first-child {
       margin-top: 0;
-      height: 40px;
+      height: 32px;
       opacity: 0.4;
     }
 
     #statements button:not(:first-child):not(:last-of-type) {
-      height: 30px;
+      height: 32px;
+      width: 40px;
       background: none;
     }
 
-    button:hover {
+    button:hover:not(:disabled) {
       opacity: 1 !important;
+      cursor: pointer;
       color: cornflowerblue;
     }
 
-    button:active {
+    button:active:not(:disabled) {
       color: darkblue;
     }
 
@@ -154,12 +266,12 @@ export class PythonOperationSequenceEditor extends LitElement {
       border: none;
       background: none;
       padding: 0;
-      cursor: pointer;
     }
 
     #play-or-skip {
       display: flex;
-      justify-content: space-around;
+      justify-content: center;
+      gap: 2rem;
     }
 
     #play-or-skip button {
@@ -169,17 +281,59 @@ export class PythonOperationSequenceEditor extends LitElement {
       border: none;
       padding: 0;
       background: none;
-      cursor: pointer
+      cursor: pointer;
     }
 
     #play-or-skip ion-icon {
       font-size: 32px;
     }
+
+    .continue {
+      opacity: 1 !important;
+      cursor: pointer !important;
+      position: relative;
+      animation: blinker 3s linear infinite !important; 
+    }
+
+    .continue * {
+      cursor: pointer !important;
+    }
+
+    #explainer.continue {
+      text-decoration: underline;
+      text-underline-position: under;
+      text-decoration-color: darkgreen;
+    }
+
+    #explainer.continue::before {
+      display: none;
+    }
+
+    .continue::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      background: darkgreen;
+      border-radius: 50%;
+      display: inline-block;
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      z-index: 100;
+    }
+
+    @keyframes blinker {
+      0% {color: inherit}
+      50% {color: darkgreen}
+      100% {color: inherit}
+    }
   `
 
   insertStatementButton = (i: number = 0) => {
     return html`<button
-      id="insert"
+      class="insert"
+      id=insert${i}
+      ?disabled=${!this.scenarioStopped || !this.scenario.isSandbox && (i < this.statements.length - 1)}
       @click=${async (e: Event) => {
         this.insertStatement(["", ""], i)
         await this.updateComplete;
@@ -194,6 +348,7 @@ export class PythonOperationSequenceEditor extends LitElement {
     return html`<dm-python-operation-node
       class="fade-in"
       id=${i}
+      ?disabled=${this.scenarioStep > -1 && !this.scenarioStopped}
       .statement=${statement}
       identifier=${identifier}
       expression=${expression}
@@ -205,49 +360,56 @@ export class PythonOperationSequenceEditor extends LitElement {
       @selectNext=${e => this.getOperationNode(parseInt(e.target.id) + 1)?.focus()}
       @remove=${e => this.removeStatement(i)}>
     </dm-python-operation-node>
-    ${this.scenario? null: this.insertStatementButton(i)}
+    ${this.insertStatementButton(i)}
     `
   }
 
   get statementList() {
     return this.statements.length > 0
       ? this.statements.map(this.statementToNode)
-      : this.scenario? null: this.insertStatementButton()
+      : this.insertStatementButton()
   }
 
   get resetButton() {
-    return html`<button @click=${this.resetScenario}>
+    return html`<button title=${LABELS[this.lang]["reset"]} ?disabled=${this.scenarioStep === -1} @click=${this.resetScenario}>
       <ion-icon style="pointer-events: none;" name="play-back-circle-outline"></ion-icon>
     </button>`
   }
 
-  skipButton = (showText=false) => {
-    return html`<button ?disabled=${!this.pyodide} @click=${this.skipScenario}>
+  get stopButton() {
+    return html`<button title=${LABELS[this.lang]["stop"]} ?disabled=${this.scenarioStopped || this.scenarioStep === -1} @click=${this.stopScenario}>
+      <ion-icon style="pointer-events: none;" name="stop-circle-outline"></ion-icon>
+    </button>`
+  }
+
+  skipButton = (showText=false, disabled=true) => {
+    return html`<button title=${LABELS[this.lang]["skip"]} ?disabled=${!this.pyodide || disabled && (this.scenarioStopped || this.scenarioStep === -1)} @click=${this.skipScenario}>
       <ion-icon style="pointer-events: none;" name="play-forward-circle-outline"></ion-icon>
-      ${showText? getLabel(this.lang, "choiceSkip"): null}
+      ${showText? LABELS[this.lang]["choiceSkip"]: null}
     </button>`
   }
 
   playButton = (showText=false) => {
-    return html`<button ?disabled=${!this.pyodide} @click=${this.stepScenario}>
+    return html`<button title=${LABELS[this.lang]["play"]} ?disabled=${!this.pyodide} @click=${this.stepScenario}>
       <ion-icon style="pointer-events: none;" name="play-circle-outline"></ion-icon>
-      ${showText? getLabel(this.lang, "choicePlay"): null}
+      ${showText? LABELS[this.lang]["choicePlay"]: null}
     </button>`
   }
 
   render() {
-    console.log(this.scenario)
     return html`
       <header>
-        <span>${this.explainer}</span>
+        <span id="explainer">${this.explainer}</span>
+        ${!this.datasetsHidden && this.scenarioStep > -1 || this.scenario.isSandbox? html`<dm-dataset-list .datasets=${this.scenario.datasets} lang=${this.lang}></dm-dataset-list>`: null}
         <nav>
-          ${this.scenarioStep === -1? null: this.resetButton}
-          ${this.scenarioStep === -1? null: this.skipButton()}
+          ${!this.scenario.isSandbox && this.scenarioStep > -1? this.resetButton: null}
+          ${!this.scenario.isSandbox && this.scenarioStep > -1? this.stopButton: null}
+          ${!this.scenario.isSandbox && this.scenarioStep > -1? this.skipButton(): null}
         </nav>
       </header>
       <div id="play-or-skip">
-        ${!this.scenario || this.scenarioStep > -1? null: this.playButton(true)}
-        ${!this.scenario || this.scenarioStep > -1? null: this.skipButton(true)}
+        ${this.scenarioStopped || this.scenario.isSandbox || this.scenarioStep > -1? null: this.playButton(true)}
+        ${this.scenarioStopped || this.scenario.isSandbox || this.scenarioStep > -1? null: this.skipButton(true, false)}
       </div>
       <div id="statements">
         ${this.statementList}
@@ -257,22 +419,17 @@ export class PythonOperationSequenceEditor extends LitElement {
 }
 
 @customElement("dm-python-operation-node")
-export class PythonOperationNode extends LitElement implements OperationNode<string> {
+export class PythonOperationNode extends LitElement {
+
+  static shadowRootOptions = {...LitElement.shadowRootOptions, mode: "open" as "open"}
 
   get identifierPlaceholder() {
-    return getLabel(this.lang, "identifierPlaceholder")
+    return LABELS[this.lang]["identifierPlaceholder"]
   }
 
   get expressionPlaceholder() {
-    return getLabel(this.lang, "expressionPlaceholder")
+    return LABELS[this.lang]["expressionPlaceholder"]
   }
-
-  constructor() {
-    super()
-    this.addEventListener("focus", () => this.identifierElement.focus())
-  }
-
-  
 
   @property({type: String})
   identifier: string = ""
@@ -286,8 +443,20 @@ export class PythonOperationNode extends LitElement implements OperationNode<str
   @property({type: String})
   lang: Language
 
-  @property({type: String})
+  @property({attribute: false})
   info: string
+
+  @property({type: Boolean})
+  disabled: boolean
+
+  @property({type: Boolean})
+  alwaysShowResult: boolean = false
+
+  @property({attribute: false})
+  dynamicStyles: ScenarioStyle[] = []
+
+  @state()
+  expressionActive: boolean = false
 
   @state()
   pyodideError: string
@@ -297,9 +466,9 @@ export class PythonOperationNode extends LitElement implements OperationNode<str
 
   @state()
   recognizedPresetName: Preset["name"] = "none"
-
+  
   @state()
-  pickingPreset: boolean
+  result: any
 
   presets: Preset[] = PRESETS
 
@@ -324,21 +493,24 @@ export class PythonOperationNode extends LitElement implements OperationNode<str
   }
 
   jump = (e: KeyboardEvent) => {
-    if(!this.pickingPreset && e.key === "ArrowDown") {
+    if(this.expression && e.key === "ArrowDown") {
       this.emitSelectNext()
     }
-    else if(!this.pickingPreset && e.key === "ArrowUp") {
+    else if(this.expression && e.key === "ArrowUp") {
       this.emitSelectPrevious()
     }
-    else if(this.pickingPreset && ["ArrowUp", "ArrowDown", "Enter", "Escape"].includes(e.key)) {
+    else if(!this.expression && ["ArrowUp", "ArrowDown", "Enter", "Escape"].includes(e.key)) {
       this.presetPickerJump(e)
     }
   }
 
   identifierFieldJump = (e: KeyboardEvent) => {
-    if(!this.pickingPreset && (e.key === "ArrowRight" || e.key === "Enter") && (e.currentTarget as HTMLInputElement).selectionStart === this.identifier.length) {
+    if(!this.expression && (e.key === "ArrowRight" || e.key === "Enter") && (e.currentTarget as HTMLInputElement).selectionStart === this.identifier.length) {
       this.expressionElement.focus()
       this.expressionElement.setSelectionRange(0, 0)
+    }
+    else if(!this.expression && !this.identifier && e.key === "Backspace") {
+      this.emitRemove()
     }
   }
 
@@ -348,7 +520,7 @@ export class PythonOperationNode extends LitElement implements OperationNode<str
       this.identifierElement.setSelectionRange(this.identifier.length, this.identifier.length)
     }
     else if(e.key === "Enter") {
-      if(this.pickingPreset) {
+      if(!this.expression) {
         this.presetPickerJump(e)
       }
       else {
@@ -362,13 +534,10 @@ export class PythonOperationNode extends LitElement implements OperationNode<str
   }
 
   presetPickerJump = (e: KeyboardEvent) => {
-    if(this.pickingPreset && e.key === "Escape") {
-      this.pickingPreset = false
-    }
-    else if(!this.pickingPreset && e.key === "Escape") {
+    if(e.key === "Escape") {
       (e.target as HTMLElement).blur()
-    } 
-    else if(this.pickingPreset && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+    }
+    else if(e.key === "ArrowDown" || e.key === "ArrowUp") {
       const oldIndex = this.presets.findIndex(p => p.name === this.selectedPresetName)
       const prevIndex = oldIndex > 0? oldIndex - 1: this.presets.length - 1
       const nextIndex = (oldIndex + 1) % this.presets.length
@@ -379,26 +548,37 @@ export class PythonOperationNode extends LitElement implements OperationNode<str
     }
   }
 
-  run = () => {
+  focus() {
+    this.identifierElement.focus()
+  }
+
+  run = async () => {
+    this.result = null
     if(!this.code) {return}
-    this.pickingPreset = false
     try {
       this.pyodide.runPython(this.code)
+      this.result = castValue(this.pyodide.globals.get(this.identifier))
     }
     catch(e) {
       this.pyodideError = /\w+Error:.*/.exec(e.message)?.at(0)
-      this.expressionElement.setCustomValidity(this.pyodideError)
+      
+      if(!this.expression || !this.pyodideError) {
+        this.expressionElement.setCustomValidity("")
+      }
+      else {
+        this.expressionElement.setCustomValidity(this.pyodideError)
+        window.browser.engine.name === "Gecko"? this.formElement: this.expressionElement.reportValidity()
+      }
     }
-    const result = this.pyodide.globals.get(this.identifier)
-    return result
   }
+
+
 
   handlePresetChange = (e: Event | {target: {value: string}}) => {
     this.selectedPresetName = (e.target as HTMLInputElement).value
     this.expression = this.presets.find(p => p.name === this.selectedPresetName).template
     this.emitExpressionChange()
     this.recognizedPresetName = this.matchingPreset.name
-    this.pickingPreset = false
     this.pyodideError = null
     this.expressionElement.focus()
   }
@@ -410,18 +590,26 @@ export class PythonOperationNode extends LitElement implements OperationNode<str
       .at(-1)
   }
 
-  @query("input#expression") expressionElement: HTMLInputElement
-  @query("input#identifier") identifierElement: HTMLInputElement
+  @query("input.expression") expressionElement: HTMLInputElement
+  @query("input.identifier") identifierElement: HTMLInputElement
+  @query("form") formElement: HTMLFormElement
 
 
   static styles = css`
 
     :host {
-      width: fit-content;
+      font-family: 'Segoe UI', Tahoma, Verdana, sans-serif;
+      width: 100%;
       height: fit-content;
-      max-width: 80vw;
-      display: flex;
+      display: grid;
+      grid-template-rows: minmax(36px, min-content) max-content;
+      grid-template-columns: [buttons] 32px [input] max-content [output] 1fr;
       align-items: stretch;
+      justify-content: flex-start;
+    }
+
+    :host(:not(:focus-within):not([alwaysShowResult])) .main {
+      max-height: 32px;
     }
 
     :host(.fade-in) {
@@ -437,13 +625,22 @@ export class PythonOperationNode extends LitElement implements OperationNode<str
       100% {opacity: 1}
     }
 
-    main {
+    .main {
+      box-sizing: border-box;
+      border: 2px solid transparent;
+      grid-row: 1;
+      grid-column: input;
       background: white;
       width: fit-content;
       display: grid;
-      max-width: 80vw;
+      min-height: 36px;
+      max-height: 800px;
+      overflow-x: hidden;
+      overflow-y: hidden;
+      transition: max-height 0.3s ease-out;
+      justify-content: flex-start;
       align-items: center;
-      grid-template-rows: 40px repeat(auto-fill, auto);
+      grid-template-rows: 36px repeat(auto-fill, auto);
       grid-template-columns: 
         [preset] max-content
         [identifier] max-content
@@ -452,56 +649,84 @@ export class PythonOperationNode extends LitElement implements OperationNode<str
         [run] max-content
     }
 
-    main:focus-within {
-      outline: 2px solid cornflowerblue;
+    :host(:focus-within) .main {
+      border: 2px solid cornflowerblue;
     }
 
     input {
-      min-height: 40px;
-      font-family: Consolas, monospace;
+      font-family: Inconsolata, Consolas, monospace;
       border: none;
       outline: none;
       padding-top: 0;
       padding-bottom: 0;
+      font-size: 10pt;
+    }
+
+    input:disabled {
+      color: inherit;
+    }
+
+    input::placeholder {
+      color: #777777;
     }
 
     code {
       grid-row: 1;
       grid-column: equals;
-      font-family: Consolas, monospace;
+      font-family: Inconsolata, Consolas, monospace;
       user-select: none;
       display: flex;
       align-items: center;
     }
 
-    input#identifier {
+    input.identifier {
       grid-row: 1;
       grid-column: identifier;
-      padding-left: 0.5rem;
+      padding-left: 0.4rem;
       font-weight: bold;
     }
 
+    label.identifier {
+      grid-row: 1;
+      grid-column: identifier;
+    }
+
     input:invalid {
-      text-decoration: underline;
-      text-decoration-color: darkred;
+      color: darkred;
+    }
+
+    input:disabled {
+      background: none;
     }
 
     input::placeholder {
       user-select: none;
     }
 
-    input#expression {
+
+    .expression {
       grid-row: 1;
       grid-column: expression;
-      padding-right: 0.25rem;
-      padding-left: 0.5rem;
-      max-width: 80ch;
+      padding-right: 0.2rem;
+      padding-left: 0.4rem;
       word-wrap: break-word;
       word-break: break-all;
-      overflow: auto;
+      overflow-x: hidden;
+      font-family: Inconsolata, Consolas, monospace;
+      font-size: 10pt;
+      min-height: 32px;
+      display: flex;
+      align-items: center;
     }
 
-    button#run {
+    label.expression {
+      grid-row: 1;
+      grid-column: expression;
+    }
+
+    button.run {
+      padding: 1px;
+      padding-right: 6px;
       opacity: 0;
       grid-row: 1;
       grid-column: run;
@@ -510,23 +735,28 @@ export class PythonOperationNode extends LitElement implements OperationNode<str
       justify-content: center;
       background: none;
       border: none;
-      font-size: 1.75rem;
+      font-size: 24px;
       cursor: pointer;
     }
 
-    :host(:hover) button#run, :host(:focus-within) button#run {
+    button.run.continue::before {
+      top: 0px;
+      right: 4px;
+    }
+
+    :host(:hover) button.run, :host(:focus-within) button.run {
       opacity: 1;
     }
 
-    button#run:hover:not(:disabled) {
+    button.run:hover:not(:disabled) {
       color: cornflowerblue;
     }
 
-    button#run:active:not(:disabled) {
+    button.run:active:not(:disabled) {
       color: darkblue;
     }
 
-    button#run:disabled {
+    button.run:disabled {
       cursor: not-allowed;
     }
 
@@ -534,9 +764,9 @@ export class PythonOperationNode extends LitElement implements OperationNode<str
     #preset-sign {
       grid-row: 1;
       grid-column: preset;
-      width: 30px;
+      width: 32px;
       height: 100%;
-      line-height: 40px;
+      line-height: 100%;
       display: flex;
       color: cornflowerblue;
       align-items: center;
@@ -552,7 +782,7 @@ export class PythonOperationNode extends LitElement implements OperationNode<str
     #preset-list {
       display: contents;
       background: white;
-      font-size: 0.75rem;
+      font-size: 10pt;
     }
 
     #preset-list input[type="radio"] {
@@ -600,53 +830,178 @@ export class PythonOperationNode extends LitElement implements OperationNode<str
     #preset-list .name {
       padding-left: 0.5rem;
       grid-column: identifier;
-      font-family: Consolas, monospace;
+      font-family: Inconsolata, Consolas, monospace;
       font-weight: bold;
     }
 
     #preset-list .template {
       padding-left: 0.5rem;
       grid-column: expression;
-      font-family: Consolas, monospace;
+      font-family: Inconsolata, Consolas, monospace;
     }
 
-    dm-message, dm-error-message {
-      display: inline-block;
-      height: 40px;
-    }
-
-    #side-buttons {
-      height: 40px;
-      width: 40px;
+    .side-buttons {
+      height: 100%;
+      width: 32px;
       align-self: stretch;
       display: flex;
       flex-direction: column;
       justify-content: flex-start;
     }
 
-    #side-buttons button {
+    .side-buttons button {
       opacity: 0;
-      max-width: 40px;
-      min-height: 40px;
+      max-width: 32px;
+      height: 36px;
       font-size: 24px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       background: none;
       border: none;
+    }
+
+    button.remove:disabled {
+      cursor: not-allowed;
+    }
+
+    button.remove:hover:not(:disabled) {
+      color: coral;
       cursor: pointer;
     }
 
-    button#remove:hover {
-      color: coral;
-    }
-
-    button#remove:active {
+    button.remove:active {
       color: darkred;
     }
 
-    :host(:hover) #side-buttons button, :host(:focus-within) #side-buttons button {
+    :host(:hover) .side-buttons button, :host(:focus-within) .side-buttons button {
       opacity: 1;
+    }
+
+    .message, .error-message {
+      grid-row: 1 / -1;
+      grid-column: output;
+      display: inline-block;
+      overflow-y: visible;
+    }
+
+    :host(:not(:focus-within)) .error-message {
+      display: none;
+    }
+
+    :not(:host([alwaysShowResult])) .result {
+      background: green important;
+      max-height: 0px;
+    }
+
+    .result {
+      grid-row: 2;
+      grid-column: input;
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+      gap: 8px;
+      padding-left: 16px;
+      padding-right: 16px;
+      align-items: center;
+      background: white;
+      overflow-x: visible;
+      overflow-y: hidden;
+      font-size: 0.75rem;
+      transition: max-height 0.3s ease-out;
+    }
+
+    .result.dataframe {
+      padding: 0;
+      grid-row: 2;
+      grid-column: input / -1;
+    }
+
+    .result vaadin-grid {
+      font-size: 0.7rem;
+      width: 100%;
+    }
+
+    .result.empty {
+      outline: none;
+    }
+
+    .result:not(.empty) .primitive-result {
+      height: 32px;
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      color: darkgreen;
+      font-family: Inconsolata, Consolas, monospace;
+    }
+
+    .result:not(.empty):not(.dataframe)::before {
+      content: "⇒";
+      font-size: 1.25rem;
+      user-select: none;
+      color: darkgreen;
+      transform: translateY(-2px);
+    }
+
+    :host(:focus-within) .result, :host[alwaysShowResult] .result {
+      max-height: 1080px;
+    }
+
+    .continue {
+      position: relative;
+      opacity: 1 !important;
+      cursor: pointer !important;
+      animation: blinker 3s linear infinite !important; 
+    }
+  
+    .continue * {
+      cursor: pointer !important;
+    }
+
+    .continue::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      background: darkgreen;
+      border-radius: 50%;
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      z-index: 100;
+    }
+
+    label.continue::before {
+      top: -9px;
+      right: 6px;
+    }
+
+    main.continue {
+      border-color: darkgreen;
+    }
+
+    main.continue::before {
+      display: none;
+    }
+
+    .identifier.continue, .expression.continue {
+      text-decoration: underline;
+      text-underline-position: below;
+    }
+
+    @keyframes blinker {
+      0% {color: inherit}
+      50% {color: darkgreen}
+      100% {color: inherit}
+    }
+
+    .message mark {
+      background: none;
+      padding-left: 3px;
+      padding-right: 3px;
+    }
+
+    .expression mark {
+      font-weight: inherit !important;
     }
   `
 
@@ -661,6 +1016,7 @@ export class PythonOperationNode extends LitElement implements OperationNode<str
       <input
         type="radio"
         name="radio"
+        ?disabled=${this.disabled}
         value=${preset.name}
         id=${preset.name}
         ?data-checked=${preset.name === this.selectedPresetName}
@@ -674,50 +1030,43 @@ export class PythonOperationNode extends LitElement implements OperationNode<str
     `)
 
     return html`
-      <div tabIndex=-1 @click=${() => {this.identifierElement.focus(); this.pickingPreset = true}} id="preset-sign">${recognizedPreset.sign}</div>
-      ${this.pickingPreset 
-        ? html`<ul id="preset-list">
-          ${presets}
-        </ul>`
-        : null
-      }
-    `
+      <div id="preset-sign">${recognizedPreset.sign}</div>
+      <ul id="preset-list">
+          ${!this.expression? presets: null}
+      </ul>`
   }
 
-  get errorMessage() {
-    const {identifierElement} = this
-    let message = null
-    if(this.pyodideError) {
-      message = this.pyodideError
-    }
-    else if(!identifierElement?.reportValidity() && identifierElement?.value) {
-      message = getLabel(this.lang, "identifierInvalid")
-    }
-    return !message? null: html`<dm-error-message class="fade-in">
-      ${message}
-    </dm-error-message>`
+  get infoMessageTextStyled() {
+    return unsafeHTML(this.dynamicStyles.reduce((result, s) => {
+      const pattern = TEXT_PATTERNS[this.lang][s.textPatternName]
+      return result.replaceAll(pattern ?? /a^/g, `<mark style="${s.style}">$&</mark>`)
+    }, this.info))
   }
+
 
   get infoMessage() {
-    return !this.info? null: html`<dm-message class="fade-in">
-      ${this.info}
+    return !this.info? null: html`<dm-message minimal class="message fade-in" id=${"message" + this.id}>
+      ${this.infoMessageTextStyled}
     </dm-message>`
   }
 
-  get message() {
-    return this.errorMessage? this.errorMessage: this.infoMessage
-  }
-
-  handleBlur = e => {
-    const tagName = e.relatedTarget?.parentElement?.tagName
-    if(e.relatedTarget?.id !== "preset-sign" && tagName !== "LABEL" && tagName !== "UL" && tagName !== "DIV") {
-      this.pickingPreset = false
-      this.active = false
+  get resultView() {
+    if(typeof this.result !== "object") {
+      return html`<div class="primitive-result">${this.result}</div>`
     }
-  }
-
-  handleFocus = e => {
-    this.active = true
+    else if(this.result === null) {
+      return null
+    }
+    else {
+      const columns = this.result.length? Object.keys(this.result[0])
+      .map(key => html`<vaadin-grid-column path=${key} auto-width></vaadin-grid-column>`)
+      : null
+      return html`
+      <vaadin-grid tabindex=-1 .items=${this.result}>
+        ${columns}
+      </vaadin-grid>
+      `
+    }
   }
 
   emitIdentifierChange = () => {
@@ -734,11 +1083,10 @@ export class PythonOperationNode extends LitElement implements OperationNode<str
     }))    
   }
 
-  emitRemove = (index: number) => {
+  emitRemove = () => {
     this.dispatchEvent(new CustomEvent("remove", {
       bubbles: true,
-      composed: true,
-      detail: {index}
+      composed: true
     }))
   }
 
@@ -756,96 +1104,154 @@ export class PythonOperationNode extends LitElement implements OperationNode<str
     }))
   }
 
+  get expressionInputTextStyled() {
+    return unsafeHTML(this.dynamicStyles.reduce((result, s) => {
+      return result.replaceAll(s.expressionPattern ?? /a^/g, `<mark style="${s.style}">$&</mark>`)
+    }, this.expression))
+  }
 
-  @state()
-  active: boolean = false
+  expressionBlurTimeout: any = null
 
-  tabIndex = 0
-
-  render() {
-
-    const buttons = html`
-      <button
-        id="remove"
-        @click=${this.emitRemove}>
-        <ion-icon style="pointer-events: none;" name="close-circle-outline"></ion-icon>
-      </button>
-    `
-
-    return html`
-      <div id="side-buttons">
-        ${buttons}
-      </div>
-      <main @keydown=${this.jump} @focusin=${this.handleFocus} @focusout=${this.handleBlur}>
-        ${this.PresetPicker}
+  get expressionInput() {    
+    return this.dynamicStyles.length === 1 || this.expressionActive
+      ? html`
         <input
-          id="identifier"
-          pattern=${pythonIdentifierPattern.source}
-          placeholder=${this.identifierPlaceholder}
-          spellcheck=${false}
-          autocomplete=${false}
-          size=${this.identifierFieldSize}
-          .value=${this.identifier}
-          @input=${e => {
-            this.pyodideError = null
-            this.identifier = e.currentTarget.value
-            e.currentTarget.setCustomValidity("")
-            e.currentTarget.checkValidity()
-            
-          }}
-          @change=${e => {
-            e.currentTarget.value = e.currentTarget.value.trim()
-            this.emitIdentifierChange()
-          }}
-          @invalid=${e => {
-            e.currentTarget.setCustomValidity(getLabel(this.lang, "identifierInvalid"))
-            e.preventDefault()
-          }}
-          @keydown=${this.identifierFieldJump}
-          @focus=${() => this.pickingPreset = !this.expression}
-        />
-        <code>=</code>
-        <input
-          id="expression"
+          class="expression"
+          id=${"expression" + this.id}
+          name="expression"
+          pattern=${(this.pyodideError? nothingPattern: anythingPattern).source}
           placeholder=${this.expressionPlaceholder}
           spellcheck=${false}
-          autocomplete=${false}
+          autocomplete="off"
+          ?disabled=${this.disabled}
           size=${this.expressionFieldSize}
           .value=${this.expression}
           @input=${e => {
-            e.currentTarget.setCustomValidity("")
             this.expression = e.currentTarget.value
-            this.pickingPreset = !this.expression
             if(!this.expression) {
               this.selectedPresetName = "none"
             }
             this.recognizedPresetName = this.matchingPreset.name
             this.pyodideError = null
+            this.expressionElement.setCustomValidity("")
+            this.result = null
           }}
           @keydown=${this.expressionFieldJump}
-          @focus=${() => this.pickingPreset = !this.expression}
           @change=${e => {
             this.expression = e.target.value
             this.emitExpressionChange()
           }}
         />
+        <label class="expression" for="expression"></label>
+      `
+      : html`
+        <span
+          class="expression"
+          id=${"expression" + this.id}
+          name="expression"
+          ?disabled=${this.disabled}
+          tabIndex=0
+          @focus=${() => {
+            clearTimeout(this.expressionBlurTimeout);
+            this.expressionActive = true
+          }}
+          style="width: calc(${this.expressionFieldSize }ch + 14.75px); color: ${this.expression? "inherit": "#777777"}"
+        ><span class="expression-content">
+          ${this.expression
+            ? this.expressionInputTextStyled
+            : this.expressionPlaceholder}
+          </span>
+        </span>
+      `
+  }
+
+  get identifierInputStyles() {
+    const s = this.dynamicStyles.find(s => s.identifierPattern)
+    return s?.identifierPattern?.test(this.identifier)? s.style: {}
+  }
+
+  updated(diff: Map<string, any>) {
+    diff.has("expressionActive") && this.expressionActive && this.expressionElement.focus()
+  }
+
+  render() {
+
+    const resultClasses = {
+      "result": true,
+      "dataframe": Array.isArray(this.result),
+      "empty": !this.result,
+      "hidable": !this.alwaysShowResult,
+      "primitive": typeof this.result !== "object"
+    }
+
+    const buttons = html`
+      <button
+        class="remove"
+        id=${"remove" + this.id}
+        ?disabled=${this.disabled}
+        @focus=${e => e.preventDefault()}
+        @mousedown=${this.emitRemove}>
+        <ion-icon style="pointer-events: none;" name="close-circle-outline"></ion-icon>
+      </button>
+    `
+
+    return html`
+      <div class="side-buttons" id=${"side-buttons" + this.id}>
+        ${buttons}
+      </div>
+      <form tabIndex=${this.disabled? -1: undefined} @submit=${e => e.preventDefault()} class="main" id=${"main" + this.id} @keydown=${this.jump} @focusout=${e => {e.relatedTarget?.click()}}>
+        ${this.PresetPicker}
+        <input
+          class="identifier"
+          id=${"identifier" + this.id}
+          name="identifier"
+          style=${this.identifierInputStyles}
+          pattern=${pythonIdentifierPattern.source}
+          placeholder=${this.identifierPlaceholder}
+          spellcheck=${false}
+          autocomplete="off"
+          ?disabled=${this.disabled}
+          size=${this.identifierFieldSize}
+          .value=${this.identifier}
+          @input=${e => {
+            this.pyodideError = null
+            this.identifier = this.identifierElement.value
+            this.identifierElement.setCustomValidity(pythonIdentifierPattern.test(this.identifier)? "": LABELS[this.lang]["identifierInvalid"])
+          }}
+          @change=${e => {
+            e.currentTarget.value = e.currentTarget.value.trim()
+            this.emitIdentifierChange()
+            if(this.identifier && !pythonIdentifierPattern.test(this.identifier)) {
+              this.identifierElement.setCustomValidity(LABELS[this.lang]["identifierInvalid"])
+              window.browser.engine.name === "Gecko"? this.formElement: this.identifierElement.reportValidity()
+            }
+            e.preventDefault()
+            e.stopPropagation()
+          }}
+          @keydown=${this.identifierFieldJump}
+        />
+        <label class="identifier" for="identifier"></label>
+        <code>=</code>
+        ${this.expressionInput}
         <button
-          id="run"
-          @click=${this.run}
-          ?disabled=${!this.code || !this.pyodide}
+          class="run"
+          id=${"run" + this.id}
+          @mousedown=${this.run}
+          ?disabled=${this.disabled || !this.code || !this.pyodide || !pythonIdentifierPattern.test(this.identifier)}
           title=${
             !this.code
-            ? getLabel(this.lang, "noIdentifierOrExpression")
+            ? LABELS[this.lang]["noIdentifierOrExpression"]
             : !this.pyodide
-              ? getLabel(this.lang, "pythonLoading")
-              : getLabel(this.lang, "runCode")
+              ? LABELS[this.lang]["loadingPyodide"]
+              : LABELS[this.lang]["runCode"]
           }>
           <ion-icon style="pointer-events: none;" name="caret-forward-circle-outline"></ion-icon>
         </button>
-      </main>
-      <aside>
-        ${this.message}
-      </aside>
+        </form>
+      ${this.infoMessage}
+      <div class=${classMap(resultClasses)} id=${"result" + this.id}>
+        ${this.resultView}
+      </div>
     `
   }
 }
@@ -855,17 +1261,15 @@ interface Preset {
   sign: string
   name: string
   template: string
-//  template: (...args: string[]) => string
 }
 
 const PRESETS = [
-  {
+/*  {
     name: "load",
     sign: "➞",
-    pattern: /\s*read_(csv|excel|json)\(.*\)\s*$/,
-    template: "a.read_csv(x)"
-//    template: (filepath: string, filetype: "csv" | "excel" | "json") => ``
-  },
+    pattern: /\s*read_(csv|excel|json)\((.*),?(.*)\)\s*$/,
+    template: "read_csv(x)"
+  },*/
   {
     name: "select",
     sign: "σ",

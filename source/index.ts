@@ -4,11 +4,21 @@ import "https://cdn.jsdelivr.net/pyodide/v0.18.0/full/pyodide.js"
 
 import "./editor"
 import "./widgets"
-import { getLabel, LabelKey, Language } from "./localization"
-import {Scenario, scenarios} from "./scenarios"
-import { ScenarioPicker } from "./widgets"
+import { LABELS, LabelKey, Language } from "./localization"
+import {Dataset, DATASETS, Scenario, scenarios} from "./scenarios"
 import { PythonOperationNode } from "./editor"
 
+import Bowser from "bowser"
+
+let BROWSER = Bowser.parse(window.navigator.userAgent)
+
+declare global {
+  interface Window {browser: typeof BROWSER}
+}
+
+window.browser = BROWSER
+
+export type PyodideStatus = "loadingPyodide" | "loadingPandas" | "loadingDatasets" | "pyodideReady" | "pyodideError" 
 
 const PERSONALS = html`
   <span>© 2021 Frederic Salmen <a href="mailto:&#x66;&#x72;&#x65;&#x64;&#x65;&#x72;&#x69;&#x63;&#x40;&#x66;&#x73;&#x61;&#x6C;&#x6D;&#x65;&#x6E;&#x2E;&#x64;&#x65;">(&#x66;&#x72;&#x65;&#x64;&#x65;&#x72;&#x69;&#x63;&#x40;&#x66;&#x73;&#x61;&#x6C;&#x6D;&#x65;&#x6E;&#x2E;&#x64;&#x65;)</a></span>
@@ -20,11 +30,17 @@ const REPOSITORY = html`
 </a>
 `
 
+async function loadDatasetPythonCode(identifier: string, url: string) {
+  const text = await (await fetch(url)).text()
+  return (...args: any[]) => `${identifier} = read_csv(StringIO("""${text}"""),${args.join(",")})`
+}
+
+
 @customElement("dm-app")
 class App extends LitElement {
 
   @state()
-  scenario: Scenario
+  scenario: Scenario = scenarios[0]
 
   @state()
   scenarios: Scenario[] = scenarios
@@ -32,12 +48,18 @@ class App extends LitElement {
   @state()
   pyodide = null
 
+  @state()
+  pyodideStatus: PyodideStatus = "loadingPyodide"
+
+  @state()
+  datasets: Dataset[] = DATASETS
+
   @property()
   lang: Language = "DE"
 
   constructor() {
     super()
-    this.initializePyodide()
+    this.initializePyodide().catch(e => this.pyodideStatus = "pyodideError")
   }
 
   async initializePyodide() {
@@ -45,30 +67,47 @@ class App extends LitElement {
     let pyodide = await loadPyodide({
       indexURL: "https://cdn.jsdelivr.net/pyodide/v0.18.1/full/"
     })
+    this.pyodideStatus = "loadingPandas"
     await pyodide.loadPackage("pandas")
-    await pyodide.runPythonAsync("from pandas import *; from numpy import *")
+    pyodide.runPython("from pandas import *")
+    pyodide.runPython("from io import StringIO")
+    this.pyodideStatus = "loadingDatasets"
+    const datasets = await Promise.all(DATASETS.map(async (d, i) => {
+      return (await loadDatasetPythonCode(d.name, d.url))()
+    }))
+    pyodide.runPython(`class D:__slots__ = (); ${datasets.join(";")}`)
     this.pyodide = pyodide
+    this.pyodideStatus = "pyodideReady"
   }
 
   static styles = css`
 
     :host {
       height: 100vh;
-      width: 100vw;
+      width: min(100%, 1920px);
+      margin-left: auto;
+      margin-right: auto;
       overflow-x: hidden;
       display: grid;
       grid-template: auto 1fr auto / 1fr auto;
+      overflow-y: scroll;
+      position: relative;
     }
 
     header {
+      background: rgba(236, 239, 241, 0.85);
       grid-row: 1;
       grid-column: 1 / 3;
       display: flex;
+      position: sticky;
+      top: 0;
+      left: 0;
       justify-content: space-between;
       align-items: center;
       padding: 0.5rem 30px;
       user-select: none;
       gap: 1rem;
+      z-index: 1000;
     }
 
     header h1 {
@@ -86,13 +125,25 @@ class App extends LitElement {
     }
 
     dm-language-picker {
+      flex-grow: 1;
+      display: flex;
       align-self: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
 
-    header div {
-      flex-shrink: 1;
+    dm-scenario-picker {
       display: flex;
-      justify-content: center;
+      flex-wrap: wrap;
+      justify-content: flex-start;
+      flex-grow: 4;
+    }
+
+    header > div {
+      flex-shrink: 1;
+      flex-grow: 1;
+      display: flex;
+      justify-content: flex-start;
       flex-wrap: wrap;
       align-items: center;
       gap: 0.25rem 0.75rem;
@@ -140,13 +191,20 @@ class App extends LitElement {
 
     div.scenario[data-active=true] {
       display: block;
+      height: 100%;
+      overflow-y: auto;
+      margin-right: 30px;
+    }
+
+    div.scenario[data-active=true] dm-operation-sequence-editor {
+      height: 100%;
     }
   `
 
   ScenarioView = (scenario: Scenario) => {
     return scenario? html`
-      <div class="scenario" data-active=${scenario === this.scenario} id=${getLabel(this.lang, scenario.name as LabelKey)}>
-        <dm-operation-sequence-editor .scenario=${!scenario.isSandbox? scenario: null} .lang=${this.lang} .pyodide=${this.pyodide} .nodeClass=${PythonOperationNode}>
+      <div class="scenario" data-active=${scenario === this.scenario} id=${LABELS[this.lang][scenario.name as LabelKey]}>
+        <dm-operation-sequence-editor .scenario=${scenario} .lang=${this.lang} .pyodide=${this.pyodide} .nodeClass=${PythonOperationNode}>
         </dm-operation-sequence-editor>
       </div>
     `: null
@@ -157,16 +215,16 @@ class App extends LitElement {
     return html`
       <header>
         <div>
-          <h1>${getLabel(this.lang, "heading")}</h1>
+          <h1>${LABELS[this.lang]["heading"]}</h1>
           <span>
-            <h2>${getLabel(this.lang, "withPython")}</h2>
-            <dm-pyodide-status lang=${this.lang} .pyodide=${this.pyodide}></dm-pyodide-status>
+            <h2>${LABELS[this.lang]["withPython"]}</h2>
+            <dm-pyodide-status-icon lang=${this.lang} pyodideStatus=${this.pyodideStatus}></dm-pyodide-status-icon>
           </span>
         </div>
         <dm-scenario-picker
           lang=${this.lang}
-          .scenarios=${this.scenarios}
-          value=${this.lang}
+          .scenarios=${this.scenarios as Scenario[]}
+          selectedIndex=${0}
           @change=${e => {this.scenario = e.currentTarget.value}}
         ></dm-scenario-picker>
         <dm-language-picker lang=${this.lang} @change=${e => {
@@ -180,7 +238,9 @@ class App extends LitElement {
         ${PERSONALS}
         ${REPOSITORY}
       </footer>
-      ${!this.pyodide? html`<dm-loading-overlay message="Python wird geladen..."></dm-loading-overlay>`: null}
+      ${!this.pyodide? html`<dm-loading-overlay>
+        ${LABELS[this.lang][this.pyodideStatus]}
+      </dm-loading-overlay>`: null}
     `
   }
 

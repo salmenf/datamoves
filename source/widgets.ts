@@ -3,9 +3,10 @@ import {LitElement, html, css, CSSResult, CSSResultArray} from "lit"
 import {customElement, property, query, state} from "lit/decorators.js"
 import {unsafeSVG} from 'lit/directives/unsafe-svg.js'
 import * as FLAGS from 'country-flag-icons/string/3x2'
-import { Scenario } from "./scenarios"
+import { Dataset, Scenario } from "./scenarios"
 import "ionicons"
-import { getLabel, LabelKey, Language } from "./localization"
+import { LABELS, LabelKey, Language } from "./localization"
+import { PyodideStatus } from "."
 
 @customElement("dm-dataset-view")
 export class DatasetView extends LitElement {}
@@ -97,7 +98,7 @@ export class ScenarioPicker extends LitElement {
   @property({attribute: false})
   scenarios: Scenario[]
 
-  @state()
+  @property({type: Number})
   selectedIndex: number = null
 
   get value() {
@@ -167,7 +168,7 @@ export class ScenarioPicker extends LitElement {
         @change=${this.handleChange}
       >
       <label class=${scenario.isSandbox? "sandbox": ""} for=${i}>
-        ${getLabel(this.lang, scenario.name as LabelKey)}
+        ${LABELS[this.lang][scenario.name as LabelKey]}
       </label>
     `)
 
@@ -177,17 +178,21 @@ export class ScenarioPicker extends LitElement {
 @customElement("dm-message")
 class Message extends LitElement {
 
+  @property({type: Boolean})
+  minimal: boolean = false
+
   static styles: CSSResult | CSSResultArray = css`
     :host {
-      overflow-wrap: break-word;
+      word-wrap: break-word;
+      min-height: 32px;
       background: lightblue;
-      padding: 0.425rem;
-      font-size: 0.6rem;
-      max-width: 350px;
+      padding: 0.125rem;
+      font-size: 9pt;
       position: relative;
       margin-left: 10px;
+      max-width: 800px;
       box-sizing: border-box;
-      height: 100%;
+      height: fit-content;
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -209,7 +214,7 @@ class Message extends LitElement {
 
     #triangle-left {
       position: absolute;
-      top: calc(50% - 5px);
+      top: 11px;
       left: -10px;
       width: 0;
       height: 0;
@@ -217,6 +222,16 @@ class Message extends LitElement {
       border-top: 5px solid transparent;
       border-right: 10px solid lightblue;
       border-bottom: 5px solid transparent;
+    }
+
+    :host([minimal]) {
+      background: transparent;
+      border-left: 3px solid darkgreen;
+      padding-left: 3px;
+    }
+
+    :host([minimal]) #triangle-left {
+      display: none;
     }
   `
 
@@ -241,14 +256,14 @@ export class ErrorMessage extends Message {
   `]
 }
 
-@customElement("dm-pyodide-status")
-class PyodideStatus extends LitElement {
+@customElement("dm-pyodide-status-icon")
+class PyodideStatusIcon extends LitElement {
 
   @property()
   lang: Language
 
-  @property({attribute: false})
-  pyodide: any
+  @property()
+  pyodideStatus: PyodideStatus
 
   static styles = css`
 
@@ -272,7 +287,7 @@ class PyodideStatus extends LitElement {
   `
 
   render() {
-    this.title = getLabel(this.lang, !this.pyodide? "pythonLoading": "pythonReady")
+    this.title = LABELS[this.lang][this.pyodideStatus]
     return html`<ion-icon 
       style="pointer-events: none"
       name="logo-python">
@@ -341,16 +356,99 @@ class LoadingOverlay extends LitElement {
       align-items: center;
       background: rgba(255, 255, 255, 0.5);
       color: darkgreen;
+      z-index: 10000;
     }
   `
-
-  @property()
-  message: string
 
   render() {
     return html`
       <dm-spinner></dm-spinner>
-      <span>${this.message}</span>
+      <slot></slot>
     `
+  }
+}
+
+@customElement("dm-dataset-list")
+export class DatasetList extends LitElement {
+
+  @property({attribute: false})
+  datasets: Dataset[]
+
+  @property()
+  lang: Language
+
+  static styles = css`
+    :host {
+      display: flex;
+      flex-direction: row;
+      font-size: 0.7rem;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    div {
+      position: relative;
+    }
+
+    main {
+      font-family: Consolas, monospace;
+      cursor: help;
+      text-decoration-line: underline overline;
+      text-underline-position: under;
+      margin-top: 4px;
+      margin-bottom: 4px;
+    }
+
+
+    div:not(:hover) aside {
+      display: none;
+    }
+
+    div:hover main {
+      color: cornflowerblue;
+
+    }
+
+    aside {
+      word-wrap: break-word;
+      padding: 0.2rem;
+      position: absolute;
+      bottom: 0;
+      left: -100%;
+      transform: translateY(100%);
+      background: rgba(255, 255, 255, 0.925);
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      border: 1px solid dimgray;
+    }
+
+    #attribution, #attribution a {
+      color: gray;
+    }
+  `
+
+  handleDblClick = (e) => {
+    const selection = getSelection()
+    const range = document.createRange()
+    range.selectNodeContents(e.target)
+    selection.removeAllRanges()
+    selection.addRange(range)
+  }
+
+  render() {
+    return this.datasets.map(d => html`
+      <div>
+        <main @dblclick=${this.handleDblClick}>D.${d.name}</main>
+        <aside>
+          <i>${LABELS[this.lang][d.name as LabelKey]}</i>
+          <div id="attribution">
+            <span>${LABELS[this.lang][d.attributionName as LabelKey]}</span>
+            <a href=${d.attributionUrl}>${d.attributionUrl}</a>
+          </div>
+        </aside>
+      </div>
+    `)
   }
 }

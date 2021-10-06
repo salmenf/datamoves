@@ -1,8 +1,10 @@
 {
   "compilerOptions": {
-    "target": "ES2017",
+    "target": "ES6",
     "module": "ESNext",
     "moduleResolution": "node",
-    "experimentalDecorators": true
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "lib":["ES2021.String", "DOM", "DOM.Iterable"]
   }
 }
