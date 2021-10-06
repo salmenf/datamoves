@@ -1,0 +1,13 @@
+{
+  "imports": {
+    "@vaadin/vaadin-grid": "./@vaadin/vaadin-grid.js",
+    "bowser": "./bowser.js",
+    "country-flag-icons/string/3x2": "./country-flag-icons/string/3x2.js",
+    "ionicons": "./ionicons.js",
+    "lit": "./lit.js",
+    "lit/decorators.js": "./lit/decorators.js",
+    "lit/directives/class-map.js": "./lit/directives/class-map.js",
+    "lit/directives/unsafe-html.js": "./lit/directives/unsafe-html.js",
+    "lit/directives/unsafe-svg.js": "./lit/directives/unsafe-svg.js"
+  }
+}
