@@ -4,7 +4,8 @@
   "description": "Interactive cheat sheet for data moves",
   "main": "index.js",
   "scripts": {
-    "dev": "snowpack dev --no-hmr"
+    "dev": "snowpack dev --no-hmr",
+    "build": "snowpack build"
   },
   "repository": {
     "type": "git",
