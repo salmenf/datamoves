@@ -204,7 +204,10 @@ class App extends LitElement {
   ScenarioView = (scenario: Scenario) => {
     return scenario? html`
       <div class="scenario" data-active=${scenario === this.scenario} id=${LABELS[this.lang][scenario.name as LabelKey]}>
-        <dm-operation-sequence-editor .scenario=${scenario} .lang=${this.lang} .pyodide=${this.pyodide} .nodeClass=${PythonOperationNode}>
+        <dm-operation-sequence-editor .scenario=${scenario} .lang=${this.lang} .pyodide=${this.pyodide} .nodeClass=${PythonOperationNode} @nextScenario=${() => {
+          const currentIndex = this.scenarios.indexOf(this.scenario)
+          this.scenario = this.scenarios[currentIndex + 1]
+        }}>
         </dm-operation-sequence-editor>
       </div>
     `: null
@@ -219,12 +222,17 @@ class App extends LitElement {
           <span>
             <h2>${LABELS[this.lang]["withPython"]}</h2>
             <dm-pyodide-status-icon lang=${this.lang} pyodideStatus=${this.pyodideStatus}></dm-pyodide-status-icon>
+            <dm-about-tooltip>
+              <p>${LABELS[this.lang]["welcomeMessage1"]}</p>
+              <p>${LABELS[this.lang]["welcomeMessage2"]}</p>
+              <p>${LABELS[this.lang]["welcomeMessage3"]}</p>
+            </dm-about-tooltip>
           </span>
         </div>
         <dm-scenario-picker
           lang=${this.lang}
           .scenarios=${this.scenarios as Scenario[]}
-          selectedIndex=${0}
+          selectedIndex=${this.scenarios.indexOf(this.scenario)}
           @change=${e => {this.scenario = e.currentTarget.value}}
         ></dm-scenario-picker>
         <dm-language-picker lang=${this.lang} @change=${e => {

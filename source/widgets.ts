@@ -98,7 +98,7 @@ export class ScenarioPicker extends LitElement {
   @property({attribute: false})
   scenarios: Scenario[]
 
-  @property({type: Number})
+  @property({type: Number, reflect: true})
   selectedIndex: number = null
 
   get value() {
@@ -381,7 +381,6 @@ export class DatasetList extends LitElement {
     :host {
       display: flex;
       flex-direction: row;
-      font-size: 0.7rem;
       gap: 1rem;
       align-items: center;
     }
@@ -391,7 +390,7 @@ export class DatasetList extends LitElement {
     }
 
     main {
-      font-family: Consolas, monospace;
+      font-family: 'Inconsolata', Consolas, monospace;
       cursor: help;
       text-decoration-line: underline overline;
       text-underline-position: under;
@@ -414,7 +413,8 @@ export class DatasetList extends LitElement {
       padding: 0.2rem;
       position: absolute;
       bottom: 0;
-      left: -100%;
+      right: 0;
+      font-size: 0.75rem;
       transform: translateY(100%);
       background: rgba(255, 255, 255, 0.925);
       z-index: 1000;
@@ -450,5 +450,67 @@ export class DatasetList extends LitElement {
         </aside>
       </div>
     `)
+  }
+}
+
+@customElement("dm-about-tooltip")
+export class AboutTooltip extends LitElement {
+
+  @property()
+  lang: Language
+
+  static styles = css`
+    :host {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: 1rem;
+      align-self: center;
+    }
+
+    div {
+      position: relative;
+      max-height: 24px;
+    }
+
+    div:not(:hover) aside {
+      display: none;
+    }
+
+    div:hover ion-icon {
+      color: cornflowerblue;
+    }
+
+    ion-icon {
+      font-size: 24px;
+    }
+
+    aside {
+      word-wrap: break-word;
+      padding: 0.2rem;
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      font-size: 0.75rem;
+      transform: translateY(100%);
+      background: rgba(255, 255, 255, 0.975);
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid dimgray;
+      min-width: 500px;
+    }
+  `
+
+  render() {
+    return html`
+      <div>
+        <ion-icon style="pointer-events: none" name="information-circle-outline">
+        </ion-icon>
+        <aside>
+          <slot></slot>
+        </aside>
+      </div>
+    `
   }
 }

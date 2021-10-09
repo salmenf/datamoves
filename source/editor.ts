@@ -11,18 +11,37 @@ export const pythonIdentifierPattern = /\s*[a-zA-CE-Z_]\w*\s*/
 export const anythingPattern = /.*/
 export const nothingPattern = /a^/
 
+function escapeHtml(unsafe: string) {
+  return unsafe
+    .replaceAll(/&/g, "&amp;")
+    .replaceAll(/</g, "&lt;")
+    .replaceAll(/>/g, "&gt;")
+    .replaceAll(/"/g, "&quot;")
+    .replaceAll(/'/g, "&#039;");
+}
+
 const castValue = (value: any) => {
-  if(value?.type === "DataFrame") {
-    let records = JSON.parse(value.to_json(undefined, "records"))
+  console.log(value)
+  if(value?.type === "DataFrame" || value?.type === "Series") {
+    let records = null
+    if(value?.type === "DataFrame") {
+      records = JSON.parse(value.to_json(undefined, "records"))
+    }
+    else {
+      let series = JSON.parse(value.to_json(undefined, "split"))
+      records = series.data.map(d => ({[series.name]: d}))
+    }
     return records.map(entry => Object.fromEntries(Object.entries(entry)
       .map(([key, value]) => [key.replace(/\./g, "․"), value])
     ))
+  }
+  else if(value?.$$?.type === "PyProxy") {
+    return value.__repr__()
   }
   else {
     return value
   }
 }
-
 
 
 @customElement("dm-operation-sequence-editor")
@@ -38,13 +57,16 @@ export class PythonOperationSequenceEditor extends LitElement {
   lang: Language
 
   @property({attribute: false})
-  explainer: TemplateResult = html``
+  explainer: TemplateResult
 
   @property({attribute: false})
   statements: [string, string][] = []
 
   @property({attribute: false})
   scenario: Scenario
+
+  @property({attribute: false})
+  availablePresets: Preset[] = PRESETS
 
   @property()
   scenarioContinueSelector: string = null
@@ -58,6 +80,16 @@ export class PythonOperationSequenceEditor extends LitElement {
   @state()
   scenarioStopped: boolean = false
 
+  @property({type: Boolean, reflect: true})
+  exitDismissed: boolean = false
+
+  emitNextScenario = () => {
+    this.dispatchEvent(new CustomEvent("nextScenario", {
+      bubbles: true,
+      composed: true
+    }))    
+  }
+
   querySelectorAllNodes = (query: string) => {
     return [
       ...this.shadowRoot.querySelectorAll(query),
@@ -66,6 +98,16 @@ export class PythonOperationSequenceEditor extends LitElement {
     ]
   }
 
+  get sandboxExplainer() {
+    return html`
+    <span class="sign">★</span>
+    <span class="text">${LABELS[this.lang]["sandboxExplainer"]}</span>
+    `
+  }
+
+  firstUpdated() {
+    this.explainer = this.scenario.isSandbox? this.sandboxExplainer: null
+  }
 
   async updated(changedProperties) {
     await Promise.all([...this.operationNodes].map(n => n.updateComplete))
@@ -99,6 +141,10 @@ export class PythonOperationSequenceEditor extends LitElement {
         oldContinueElement.removeEventListener("mousedown", this.stepScenario, true)
         oldContinueElement.classList.remove("continue")
       }
+    }
+    else if(changedProperties.has("lang")) {
+      this.resetScenario()
+      this.explainer = this.scenario.isSandbox? this.sandboxExplainer: null
     }
   }
 
@@ -139,6 +185,7 @@ export class PythonOperationSequenceEditor extends LitElement {
     this.statements = []
     this.scenarioStep = -1
     this.scenarioStopped = false
+    this.exitDismissed = false
     this.scenarioContinueSelector = null
   } 
 
@@ -148,15 +195,24 @@ export class PythonOperationSequenceEditor extends LitElement {
     await this.updateComplete
     if(this.scenarioStep < this.scenario.program.length) {
       const task = this.scenario.program[this.scenarioStep]
-      this.scenarioContinueSelector = await task(this)
+      this.scenarioContinueSelector = await task(this);
+      [...this.operationNodes].forEach(n => n.recognizePreset())
+      if(this.scenarioContinueSelector === null) {
+        await this.stepScenario()
+      }
     }
     else {
       this.stopScenario()
-      this.requestUpdate()
     }
   }
 
   stopScenario = () => {
+    const lastContinueElements = this.querySelectorAllNodes(this.scenarioContinueSelector)
+    for(const lastContinueElement of lastContinueElements) {
+      "disabled" in lastContinueElement
+      ? (lastContinueElement as any).disabled = false
+      : null
+    }
     this.scenarioStopped = true
     this.scenarioContinueSelector = null
   }
@@ -164,7 +220,8 @@ export class PythonOperationSequenceEditor extends LitElement {
   skipScenario = async () => {
     for(let i = 0; i <= this.scenario.program.length; i++) {
       await this.stepScenario()
-    } 
+    }
+    window.scrollTo(0, 0)
   }
 
   static styles = css`
@@ -192,16 +249,17 @@ export class PythonOperationSequenceEditor extends LitElement {
 
     header > dm-dataset-list {
       flex-grow: 1;
+      flex-shrink: 0;
       justify-content: flex-end;
-      align-items: flex-start;
+      align-items: center;
       flex-wrap: wrap;
       gap: 0;
       column-gap: 0.5rem;
       margin-left: 2rem;
     }
 
-    span {
-      max-width: 800px;
+    #explainer span {
+      max-width: 1000px;
       font-size: 0.9rem;
     }
 
@@ -209,6 +267,7 @@ export class PythonOperationSequenceEditor extends LitElement {
       display: flex;
       flex-direction: row;
       justify-content: flex-end;
+      align-items: center;
       margin-left: 1rem;
     }
 
@@ -268,13 +327,13 @@ export class PythonOperationSequenceEditor extends LitElement {
       padding: 0;
     }
 
-    #play-or-skip {
+    #play-or-skip, #experiment-or-next {
       display: flex;
       justify-content: center;
       gap: 2rem;
     }
 
-    #play-or-skip button {
+    #play-or-skip button, #experiment-or-next button {
       font-size: 1rem;
       display: flex;
       align-items: center;
@@ -284,7 +343,7 @@ export class PythonOperationSequenceEditor extends LitElement {
       cursor: pointer;
     }
 
-    #play-or-skip ion-icon {
+    #play-or-skip ion-icon, #experiment-or-next ion-icon {
       font-size: 32px;
     }
 
@@ -307,6 +366,23 @@ export class PythonOperationSequenceEditor extends LitElement {
 
     #explainer.continue::before {
       display: none;
+    }
+
+    #explainer {
+      display: flex;
+      gap: 2rem;
+      flex-direction: row;
+    }
+
+    #explainer .sign {
+      font-size: 3rem;
+      flex-shrink: 0;
+      user-select: none;
+    }
+
+    #explainer .text {
+      display: flex;
+      align-items: center;
     }
 
     .continue::before {
@@ -333,7 +409,8 @@ export class PythonOperationSequenceEditor extends LitElement {
     return html`<button
       class="insert"
       id=insert${i}
-      ?disabled=${!this.scenarioStopped || !this.scenario.isSandbox && (i < this.statements.length - 1)}
+      .statements=${this.statements}
+      ?disabled=${!this.scenario.isSandbox && !this.exitDismissed}
       @click=${async (e: Event) => {
         this.insertStatement(["", ""], i)
         await this.updateComplete;
@@ -348,10 +425,11 @@ export class PythonOperationSequenceEditor extends LitElement {
     return html`<dm-python-operation-node
       class="fade-in"
       id=${i}
-      ?disabled=${this.scenarioStep > -1 && !this.scenarioStopped}
+      ?disabled=${!this.scenario.isSandbox && !this.exitDismissed}
       .statement=${statement}
       identifier=${identifier}
       expression=${expression}
+      .presets=${this.availablePresets}
       .pyodide=${this.pyodide}
       .lang=${this.lang}
       @identifierChange=${e => this.setIdentifier(e.target.identifier, i)}
@@ -396,6 +474,20 @@ export class PythonOperationSequenceEditor extends LitElement {
     </button>`
   }
 
+  experimentButton = () => {
+    return html`<button title=${LABELS[this.lang]["choiceExperimentElaborate"]} @click=${() => this.exitDismissed = true}>
+      <ion-icon style="pointer-events: none;" name="flask-outline"></ion-icon>
+      ${LABELS[this.lang]["choiceExperiment"]}
+    </button>`
+  }
+
+  nextButton = () => {
+    return html`<button title=${LABELS[this.lang]["choiceNext"]} @click=${this.emitNextScenario}>
+      <ion-icon style="pointer-events: none;" name="arrow-forward-circle-outline"></ion-icon>
+      ${LABELS[this.lang]["choiceNext"]}
+    </button>`
+  }
+
   render() {
     return html`
       <header>
@@ -413,6 +505,10 @@ export class PythonOperationSequenceEditor extends LitElement {
       </div>
       <div id="statements">
         ${this.statementList}
+      </div>
+      <div id="experiment-or-next">
+        ${!this.exitDismissed && this.scenarioStopped? this.experimentButton(): null}
+        ${!this.exitDismissed && this.scenarioStopped? this.nextButton(): null}
       </div>
     `
   }
@@ -443,8 +539,11 @@ export class PythonOperationNode extends LitElement {
   @property({type: String})
   lang: Language
 
-  @property({attribute: false})
+  @property()
   info: string
+
+  @property({type: String, reflect: true})
+  header: string
 
   @property({type: Boolean})
   disabled: boolean
@@ -470,6 +569,7 @@ export class PythonOperationNode extends LitElement {
   @state()
   result: any
 
+  @property({attribute: false})
   presets: Preset[] = PRESETS
 
   get code() {
@@ -479,17 +579,11 @@ export class PythonOperationNode extends LitElement {
   }
 
   get identifierFieldSize() {
-    return Math.max(
-        this.identifier.length,
-        this.identifierPlaceholder.length, 
-        ...this.presets.map(p => p.name.length)
-      )
+    return this.identifier.length? this.identifier.length: this.identifierPlaceholder.length
   }
 
   get expressionFieldSize() {
-    return this.expression.length > this.expressionPlaceholder.length
-      ? this.expression.length
-      : this.expressionPlaceholder.length
+    return this.expression.length? this.expression.length: this.expressionPlaceholder.length
   }
 
   jump = (e: KeyboardEvent) => {
@@ -502,6 +596,11 @@ export class PythonOperationNode extends LitElement {
     else if(!this.expression && ["ArrowUp", "ArrowDown", "Enter", "Escape"].includes(e.key)) {
       this.presetPickerJump(e)
     }
+    else if(this.disabled) {
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
   }
 
   identifierFieldJump = (e: KeyboardEvent) => {
@@ -511,6 +610,11 @@ export class PythonOperationNode extends LitElement {
     }
     else if(!this.expression && !this.identifier && e.key === "Backspace") {
       this.emitRemove()
+    }
+    else if(this.disabled) {
+      e.preventDefault()
+      e.stopPropagation()
+      return
     }
   }
 
@@ -530,6 +634,11 @@ export class PythonOperationNode extends LitElement {
     }
     else if(e.key == "Escape") {
       this.presetPickerJump(e)
+    }
+    else if(this.disabled) {
+      e.preventDefault()
+      e.stopPropagation()
+      return
     }
   }
 
@@ -579,8 +688,14 @@ export class PythonOperationNode extends LitElement {
     this.expression = this.presets.find(p => p.name === this.selectedPresetName).template
     this.emitExpressionChange()
     this.recognizedPresetName = this.matchingPreset.name
-    this.pyodideError = null
-    this.expressionElement.focus()
+    this.pyodideError = null;
+    (this.identifier? this.expressionElement: this.identifierElement).focus()
+  }
+
+  recognizePreset = () => {
+    this.recognizedPresetName = this.matchingPreset
+      ? this.matchingPreset.name
+      : this.recognizedPresetName
   }
 
   get matchingPreset() {
@@ -602,10 +717,21 @@ export class PythonOperationNode extends LitElement {
       width: 100%;
       height: fit-content;
       display: grid;
-      grid-template-rows: minmax(36px, min-content) max-content;
+      grid-template-rows: minmax(32px, min-content) max-content;
       grid-template-columns: [buttons] 32px [input] max-content [output] 1fr;
       align-items: stretch;
       justify-content: flex-start;
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+
+    :host::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+
+    :host([header]) {
+      grid-template-rows: minmax(64px, min-content) max-content;
     }
 
     :host(:not(:focus-within):not([alwaysShowResult])) .main {
@@ -625,7 +751,16 @@ export class PythonOperationNode extends LitElement {
       100% {opacity: 1}
     }
 
+    .header {
+      grid-row: 1;
+      grid-column: input;
+      margin: 0;
+      line-height: 1em;
+      height: 1em;
+    }
+
     .main {
+      font-stretch: inherit;
       box-sizing: border-box;
       border: 2px solid transparent;
       grid-row: 1;
@@ -637,7 +772,7 @@ export class PythonOperationNode extends LitElement {
       max-height: 800px;
       overflow-x: hidden;
       overflow-y: hidden;
-      transition: max-height 0.3s ease-out;
+      transition: max-height 1s ease-out 0.1s;
       justify-content: flex-start;
       align-items: center;
       grid-template-rows: 36px repeat(auto-fill, auto);
@@ -649,12 +784,17 @@ export class PythonOperationNode extends LitElement {
         [run] max-content
     }
 
+    .main.header {
+      align-self: flex-end;
+    }
+
     :host(:focus-within) .main {
       border: 2px solid cornflowerblue;
     }
 
     input {
       font-family: Inconsolata, Consolas, monospace;
+      font-stretch: inherit;
       border: none;
       outline: none;
       padding-top: 0;
@@ -719,9 +859,10 @@ export class PythonOperationNode extends LitElement {
       align-items: center;
     }
 
-    label.expression {
+    input.expression {
       grid-row: 1;
       grid-column: expression;
+      text-overflow: ellipsis;
     }
 
     button.run {
@@ -796,7 +937,6 @@ export class PythonOperationNode extends LitElement {
       padding: 0;
       cursor: pointer;
       user-select: none;
-      width: 100px;
     }
 
     #preset-list label[data-selected=true] > * {
@@ -838,6 +978,9 @@ export class PythonOperationNode extends LitElement {
       padding-left: 0.5rem;
       grid-column: expression;
       font-family: Inconsolata, Consolas, monospace;
+      max-width: 50ch;
+      word-wrap: break-word;
+      text-overflow: ellipsis;
     }
 
     .side-buttons {
@@ -846,7 +989,7 @@ export class PythonOperationNode extends LitElement {
       align-self: stretch;
       display: flex;
       flex-direction: column;
-      justify-content: flex-start;
+      justify-content: flex-end;
     }
 
     .side-buttons button {
@@ -879,19 +1022,11 @@ export class PythonOperationNode extends LitElement {
     }
 
     .message, .error-message {
-      grid-row: 1 / -1;
+      grid-row: 1;
       grid-column: output;
       display: inline-block;
       overflow-y: visible;
-    }
-
-    :host(:not(:focus-within)) .error-message {
-      display: none;
-    }
-
-    :not(:host([alwaysShowResult])) .result {
-      background: green important;
-      max-height: 0px;
+      align-self: flex-end;
     }
 
     .result {
@@ -908,7 +1043,8 @@ export class PythonOperationNode extends LitElement {
       overflow-x: visible;
       overflow-y: hidden;
       font-size: 0.75rem;
-      transition: max-height 0.3s ease-out;
+      max-height: 0px;
+      transition: max-height 1s ease-out 0.1s;
     }
 
     .result.dataframe {
@@ -924,6 +1060,10 @@ export class PythonOperationNode extends LitElement {
 
     .result.empty {
       outline: none;
+    }
+
+    .result:not(.hidable) {
+      max-height: 800px;
     }
 
     .result:not(.empty) .primitive-result {
@@ -975,11 +1115,11 @@ export class PythonOperationNode extends LitElement {
       right: 6px;
     }
 
-    main.continue {
-      border-color: darkgreen;
+    .main.continue {
+      border-color: darkgreen !important;
     }
 
-    main.continue::before {
+    .main.continue::before {
       display: none;
     }
 
@@ -1002,6 +1142,10 @@ export class PythonOperationNode extends LitElement {
 
     .expression mark {
       font-weight: inherit !important;
+    }
+
+    label {
+      width: 0;
     }
   `
 
@@ -1058,8 +1202,9 @@ export class PythonOperationNode extends LitElement {
       return null
     }
     else {
+      console.log(this.result)
       const columns = this.result.length? Object.keys(this.result[0])
-      .map(key => html`<vaadin-grid-column path=${key} auto-width></vaadin-grid-column>`)
+      .map(key => html`<vaadin-grid-column header=${key} path=${key} auto-width></vaadin-grid-column>`)
       : null
       return html`
       <vaadin-grid tabindex=-1 .items=${this.result}>
@@ -1106,14 +1251,15 @@ export class PythonOperationNode extends LitElement {
 
   get expressionInputTextStyled() {
     return unsafeHTML(this.dynamicStyles.reduce((result, s) => {
+      console.log(result)
+      console.log(s.expressionPattern)
       return result.replaceAll(s.expressionPattern ?? /a^/g, `<mark style="${s.style}">$&</mark>`)
     }, this.expression))
   }
 
-  expressionBlurTimeout: any = null
 
   get expressionInput() {    
-    return this.dynamicStyles.length === 1 || this.expressionActive
+    return !this.dynamicStyles.some(s => s.expressionPattern)
       ? html`
         <input
           class="expression"
@@ -1151,10 +1297,7 @@ export class PythonOperationNode extends LitElement {
           name="expression"
           ?disabled=${this.disabled}
           tabIndex=0
-          @focus=${() => {
-            clearTimeout(this.expressionBlurTimeout);
-            this.expressionActive = true
-          }}
+          @focus=${() => !this.disabled && (this.dynamicStyles = this.dynamicStyles.map(s => ({...s, expressionPattern: undefined})))}
           style="width: calc(${this.expressionFieldSize }ch + 14.75px); color: ${this.expression? "inherit": "#777777"}"
         ><span class="expression-content">
           ${this.expression
@@ -1171,7 +1314,7 @@ export class PythonOperationNode extends LitElement {
   }
 
   updated(diff: Map<string, any>) {
-    diff.has("expressionActive") && this.expressionActive && this.expressionElement.focus()
+    diff.has("dynamicStyles") && !this.dynamicStyles.some(s => s.expressionPattern) && this.expressionElement.focus()
   }
 
   render() {
@@ -1199,7 +1342,8 @@ export class PythonOperationNode extends LitElement {
       <div class="side-buttons" id=${"side-buttons" + this.id}>
         ${buttons}
       </div>
-      <form tabIndex=${this.disabled? -1: undefined} @submit=${e => e.preventDefault()} class="main" id=${"main" + this.id} @keydown=${this.jump} @focusout=${e => {e.relatedTarget?.click()}}>
+      ${this.header? html`<h4 class="header" id=${"header" + this.id}>${this.header}</h4>`: null}
+      <form tabIndex=${this.disabled? -1: undefined} @submit=${e => e.preventDefault()} class=${"main" + (this.header? " header": "")} id=${"main" + this.id} @keydown=${this.jump} @focusout=${e => {e.relatedTarget?.click()}}>
         ${this.PresetPicker}
         <input
           class="identifier"
@@ -1247,7 +1391,7 @@ export class PythonOperationNode extends LitElement {
           }>
           <ion-icon style="pointer-events: none;" name="caret-forward-circle-outline"></ion-icon>
         </button>
-        </form>
+      </form>
       ${this.infoMessage}
       <div class=${classMap(resultClasses)} id=${"result" + this.id}>
         ${this.resultView}
@@ -1256,14 +1400,14 @@ export class PythonOperationNode extends LitElement {
   }
 }
 
-interface Preset {
+export interface Preset {
   pattern: RegExp
   sign: string
   name: string
   template: string
 }
 
-const PRESETS = [
+export const PRESETS = [
 /*  {
     name: "load",
     sign: "➞",
@@ -1271,52 +1415,64 @@ const PRESETS = [
     template: "read_csv(x)"
   },*/
   {
+    name: "function",
+    sign: "f",
+    pattern: /^\s*lambda ([a-zA-Z_]\w*)(,\s+([a-zA-Z_]\w*))?\w*:\w*.*\s*$/,
+    template: "lambda x: expr"
+  },
+  {
+    name: "view",
+    sign: "⌗",
+    pattern: /^\s*(?:D\.)?([a-zA-Z_]\w*)\s*$/,
+    template: "D.a"
+  },
+  {
     name: "select",
     sign: "σ",
-    pattern: /\s*([a-zA-Z_]\w*)(?:\[(.*)\])+\s*$/,
-    template: "a[p][q]"
+    pattern: /([a-zA-Z_]\w*)(?:\[(.*)\])+/,
+    template: "D.a[cond][attrs]"
   },
   {
     name: "map",
     sign: "λ",
-    pattern: /\s*([a-zA-Z_]\w*)(?:\[(.*)\])+\.apply\((.*)\)\s*$/,
-    template: "a[p][q].apply(lambda x:f)"
+    pattern: /([a-zA-Z_]\w*)\.assign\(.*=.*\.apply\(.*\)(,\s*.*=.*\.apply\(.*\))*\)/,
+    template: "D.a.assign(attr=D.a['attr'].apply(func))"
   },
   {
     name: "calculate",
     sign: "κ",
-    pattern: /\s*([a-zA-Z_]\w*)(?:\[(.*)\])?\.apply\((.*),\s*axis=1\)\s*$/,
-    template: "a.apply(lambda x:f, axis=1)"
+    pattern: /([a-zA-Z_]\w*)\.assign\(.*=.*\)/,
+    template: "D.a.assign(attr=expr)"
   },
   {
     name: "aggregate",
     sign: "γ",
-    pattern: /\s*([a-zA-Z_]\w*)\.groupby\((.*)\)\.agg\((.*)\)\s*$/,
-    template: "a.groupby(p).agg(lambda x:f)"
+    pattern: /([a-zA-Z_]\w*)\.groupby\((.*)\)(?:\[(.*)\])*\.agg\((.*)\)/,
+    template: "D.a.groupby(lambda g: '').agg(aggfunc)"
   },
   {
     name: "add",
     sign: "⋃",
-    pattern: /\s*([a-zA-Z_]\w*)\.concat\(([a-zA-Z_]\w*)\)\s*$/,
-    template: "a.concat(b)"
+    pattern: /([a-zA-Z_]\w*)\.append\((?:D\.)?([a-zA-Z_]\w*)\)\.drop_duplicates\(\)\.reset_index\(drop=True\)/,
+    template: "D.a.append(D.b).drop_duplicates().reset_index(drop=True)"
   },
- /* {
+  {
     name: "subtract",
     sign: "⎯",
-    pattern: /([a-zA-Z_]\w*)\.merge\(([a-zA-Z_]\w*),\s*indicator=True,\s*how='left'\)\[lambda\s*x:\s*x\._merge=='left_only'\]\.drop\('_merge',\s*1\)$/,
-    template: ".merge(, indicator=True, how='left')[lambda x: x._merge=='left_only'].drop('_merge', 1)"
-  },*/
+    pattern: /([a-zA-Z_]\w*).merge\((?:D\.)?([a-zA-Z_]\w*),\s*indicator=True,\s*how='left'\)\[lambda\s+x:\s*x\._merge=='left_only'\]\.drop\('_merge',\s*1\)/,
+    template: "D.a.merge(D.b, indicator=True, how='left')[lambda x: x._merge=='left_only'].drop('_merge', 1)"
+  },
   {
     name: "intersect",
     sign: "⋂",
-    pattern: /\s*([a-zA-Z_]\w*)\[\(([a-zA-Z_]\w*)==([a-zA-Z_]\w*)\)\.values\.all\(axis=1\)\]\s*$/,
-    template: "a[(a==b).values.all(axis=1)]"
+    pattern: /([a-zA-Z_]\w*).merge\((?:D\.)?([a-zA-Z_]\w*)\)/,
+    template: "D.a.merge(D.b)"
   },
   {
     name: "relate",
     sign: "⋈",
-    pattern: /\s*([a-zA-Z_]\w*)\.merge\(([a-zA-Z_]\w*),\s*how=('|")cross('|")\)(?:\[(.*)\])?\s*$/,
-    template: "a.merge(b, how='cross')[p]"
+    pattern: /([a-zA-Z_]\w*)\.merge\((?:D\.)?([a-zA-Z_]\w*),\s*on='\w+'\)/,
+    template: "D.a.merge(D.b, on='attr')"
   },
   {
     name: "none",
@@ -1341,3 +1497,4 @@ const DATA_MOVES = {
   relate: d1.merge(d2, how='cross')[condition]
 }
 */
+
