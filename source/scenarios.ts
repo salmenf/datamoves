@@ -200,12 +200,12 @@ const introduceDataset = ({statement, labelPrefix, continueSelector=null, nodeSt
     }
     host.operationNodes[i].info = LABELS[host.lang][`${labelPrefix}Info1-1`]
     host.operationNodes[i].setAttribute("style", nodeStyle) 
-    return `run${i}`
+    return `#run${i}`
   },
   host => {
     host.operationNodes[i].run()
     host.operationNodes[i].info = LABELS[host.lang][`${labelPrefix}Info1-2`]
-    return continueSelector? continueSelector: `insert${i}`
+    return continueSelector? continueSelector: `#insert${i}`
   } 
 ]
 
