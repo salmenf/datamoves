@@ -268,14 +268,13 @@ export const scenarios: Scenario[] = [
       return "#run0"
     },
     async host => {
-      host.operationNodes[0].alwaysShowResult = true
+      
       await host.operationNodes[0].run()
       return "#insert0"
     },
     async host => {
       host.insertStatement(["ansicht_studierende", "D.stu"])
       await host.updateComplete
-      host.operationNodes[1].alwaysShowResult = true
       host.operationNodes[1].header = LABELS[host.lang]["basicHeading2"]
       host.operationNodes[1].info = LABELS[host.lang]["basicInfo2-1"]
       host.operationNodes[1].dynamicStyles = [SCENARIO_STYLES.dataset]
@@ -284,6 +283,8 @@ export const scenarios: Scenario[] = [
     async host => {
       host.operationNodes[1].info = LABELS[host.lang]["basicInfo2-2"]
       await host.operationNodes[1].run()
+      host.operationNodes[0].alwaysShowResult = true
+      host.operationNodes[1].alwaysShowResult = true
       return null
     }
   ], [DATASETS[0]]),
