@@ -18,6 +18,11 @@ declare global {
 
 window.browser = BROWSER
 
+if(window.browser.browser.name === "Safari") {
+  window.alert("Sorry, Safari is not supported! Please use another browser (Chrome, Firefox, Edge, Opera, etc.) to access this page.")
+  throw Error("IncompatibleBrowserError: Safari detected")
+}
+
 export type PyodideStatus = "loadingPyodide" | "loadingPandas" | "loadingDatasets" | "pyodideReady" | "pyodideError" 
 
 const PERSONALS = html`
