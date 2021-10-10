@@ -1,14 +1,14 @@
 import {LitElement, html, css} from "lit"
 import {customElement, property, query, state} from "lit/decorators.js"
 import "https://cdn.jsdelivr.net/pyodide/v0.18.0/full/pyodide.js"
+import "core-js/features/array/at"
+import Bowser from "bowser"
 
 import "./editor"
 import "./widgets"
 import { LABELS, LabelKey, Language } from "./localization"
 import {Dataset, DATASETS, Scenario, scenarios} from "./scenarios"
 import { PythonOperationNode } from "./editor"
-
-import Bowser from "bowser"
 
 let BROWSER = Bowser.parse(window.navigator.userAgent)
 
