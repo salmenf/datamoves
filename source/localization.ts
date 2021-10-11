@@ -6,6 +6,8 @@ export const TEXT_PATTERNS = {
   "DE": {
     "variable": /variables?/gi,
     "identifier": /namen?s?/gi,
+    "oldIdentifier": /alten?r? namen?s?/gi,
+    "newIdentifier": /neuen?r? namen?s?/gi,
     "expression": /(?:ausdrucks?)|(?:ausdrücke)/gi,
     "value": /werte?s?n?/gi,
     "dataset": /(?:datensatz(?:es)?)|(?:datensätzen?)/gi,
@@ -27,6 +29,8 @@ export const TEXT_PATTERNS = {
   "GB": {
     "variable": /variables?/gi,
     "identifier": /names?/gi,
+    "oldIdentifier": /old names?/gi,
+    "newIdentifier": /new names?/gi,
     "expression": /expressions?/gi,
     "value": /values?/gi,
     "dataset": /datasets?/gi,
@@ -97,18 +101,6 @@ export const LABELS = {
     "pyodideReady": "Python ist bereit.",
     "pyodideError": "Fehler beim Laden von Python! Hinweis: Nutzen Sie Firefox und haben Sie die Seite mehrmals neu geladen? Dann ist wahrscheinlich ein bekannter Fehler von Firefox aufgetreten (Speicherleck). In dem Fall hilft, Firefox komplett zu schließen und neu zu starten.",
     
-    "sandboxExplainer": "Hier können beliebige Data Moves probiert werden.",
-
-    "basicExplainer1": "Den grün markierten Teil der Seite anklicken, um fortzufahren.",
-    "basicExplainer2-1": "Rechts werden verfügbare Datensätze aufgelistet.",
-    "basicExplainer2-2": "Rechts werden verfügbare Datensätze aufgelistet. Unten können Variablen definiert werden, um Datensätze zu analysieren.",
-    "basicHeading1": "Variablen",
-    "basicInfo1-1": "Das ist eine Variable. Sie hat einen Namen und einen Ausdruck.",
-    "basicInfo1-2": "Das ist eine Variable. Sie hat einen Namen und einen Ausdruck. Wenn beides gegeben ist, kann aus dem Ausdruck ein Wert berechnet werden. Solange die Variable ausgewählt ist, wird der berechnete Wert angezeigt.",
-    "basicHeading2": "Datensätze",
-    "basicInfo2-1": "Datensätze können betrachtet werden, indem sie einer Variable zugewiesen werden.",
-    "basicInfo2-2": "Datensätze können betrachtet werden, indem sie einer Variable zugewiesen werden. Sie bestehen aus Fällen (angezeigt als Zeilen), Attributen (angezeigt als Spalten) und Werten (angezeigt als Zellen).",
-  
     "studentDatasetHeader": "Beispiel: Studierende",
     "studentDatasetInfo1-1": "Betrachten wir als einfaches Beispiel den Datensatz 'D.stu'.",
     "studentDatasetInfo1-2": "Betrachten wir als einfaches Beispiel den Datensatz 'D.stu'. Gegeben sind 15 Fälle, die die Anzahl von Studierenden in den 15 beliebtesten Fachbereichen an deutschen Universitäten 2019/2020 repräsentieren. Jeder Fall liefert zusätzlich die Studierendenzahlen aufgeteilt nach Fachsemester (Anzahl der Erst- und Zweitsemester, etc.).",
@@ -132,6 +124,21 @@ export const LABELS = {
     "betDatasetHeader": "Beispiel: Betreuungsverhältnis",
     "betDatasetInfo1-1": "Betrachten wir den Datensatz 'D.bet'.",
     "betDatasetInfo1-2": "Betrachten wir den Datensatz 'D.bet'. Gegeben sind 30 Fälle, die Auskunft über das durchschnittliche Betreuungsverhältnis (Lerner pro Lehrer) von 1990 bis 2018 bieten. Der Datensatz enthält für jede Schulform ein entsprechendes Attribut. Stellenweise fehlen Daten, was mit einem Wert von 0 vermerkt wurde.",
+
+    "sandboxExplainer": "Hier können beliebige Data Moves probiert werden.",
+
+    "basicExplainer1": "Den grün markierten Teil der Seite anklicken, um fortzufahren.",
+    "basicExplainer2-1": "Rechts werden verfügbare Datensätze aufgelistet.",
+    "basicExplainer2-2": "Rechts werden verfügbare Datensätze aufgelistet. Unten können Variablen definiert werden, um Datensätze zu analysieren.",
+    "basicHeading0": "Variablen",
+    "basicInfo0-1": "Das ist eine Variable. Sie hat einen Namen und einen Ausdruck.",
+    "basicInfo0-2": "Das ist eine Variable. Sie hat einen Namen und einen Ausdruck. Wenn beides gegeben ist, kann aus dem Ausdruck ein Wert berechnet werden. Solange die Variable ausgewählt ist, wird der berechnete Wert angezeigt.",
+    "basicHeading1": "Datensätze",
+    "basicInfo1-1": "Datensätze können betrachtet werden, indem sie einer Variable zugewiesen werden.",
+    "basicInfo1-2": "Datensätze können betrachtet werden, indem sie einer Variable zugewiesen werden. Sie bestehen aus Fällen (angezeigt als Zeilen), Attributen (angezeigt als Spalten) und Werten (angezeigt als Zellen).",
+    "basicHeading3": "Umbenennen",
+    "basicInfo2-1": "Die Attribute (Spalten) von Datensätzen können umbenannt werden.",
+    "basicInfo2-2": "Die Attribute (Spalten) von Datensätzen können umbenannt werden. Dazu werden die alten Namen angegeben, außerdem die neuen Namen.",
 
     "selectHeader1": "Auswählen von Fällen nach Werten",
     "selectExplainer1": "Auswählen heißt, einen Datensatz auf diejenigen Fälle oder Attribute einzuschränken, die eine bestimmte Bedingung erfüllen.",
@@ -261,18 +268,6 @@ export const LABELS = {
     "pyodideReady": "Python is ready.",
     "pyodideError": "Error loading Python! Hint: Do you use Firefox and reloaded the page multiple times? Then it is likely a common error in Firefox occured (memory leak). To solve this, completely close and restart Firefox.",
 
-    "sandboxExplainer": "Try any data move below.",
-    
-    "basicExplainer1": "Click the part of the site marked in green to continue.",
-    "basicExplainer2-1": "On the right side is a list of available datasets.",
-    "basicExplainer2-2": "On the right side is a list of available datasets. Below, variables can be defined to analyze the datasets.",
-    "basicHeading1": "Variables",
-    "basicInfo1-1": "This is a variable. It has a name, and an expression.",
-    "basicInfo1-2": "This is a variable. It has a name, and an expression. Once both are written, the expression can be resolved to a value. As long as the variable is focused, the computed value is shown.",
-    "basicHeading2": "Datasets",
-    "basicInfo2-1": "Datasets can be viewed by assigning them to a variable.",
-    "basicInfo2-2": "Datasets can be viewed by assigning them to a variable. They consist of cases (displayed as rows), attributes (displayed as columns) und values (displayed as cells).",
-
     "studentDatasetHeader": "Example dataset (students)",
     "studentDatasetInfo1-1": "As an easy example, let us look at the dataset 'D.stu'.",
     "studentDatasetInfo1-2": "As an easy example, let us look at the dataset 'D.stu'. It contains 15 cases representing the number of students in the 15 most popular subjects at German universities 2019/2020. Each case also has the number of students by semester (students in the first or second semester, etc.).",
@@ -296,6 +291,21 @@ export const LABELS = {
     "betDatasetHeader": "Example: Student-teacher-ratio",
     "betDatasetInfo1-1": "Consider the dataset 'D.bet'.",
     "betDatasetInfo1-2": "Consider the dataset 'D.bet'. It has 30 cases with information about the average student-teacher-ratio from 1990 to 2018. For each type of school, there is a matching attribute. At some points, data is missing, which is noted with a value of 0.",
+
+    "sandboxExplainer": "Try any data move below.",
+    
+    "basicExplainer1": "Click the part of the site marked in green to continue.",
+    "basicExplainer2-1": "On the right side is a list of available datasets.",
+    "basicExplainer2-2": "On the right side is a list of available datasets. Below, variables can be defined to analyze the datasets.",
+    "basicHeading0": "Variables",
+    "basicInfo0-1": "This is a variable. It has a name, and an expression.",
+    "basicInfo0-2": "This is a variable. It has a name, and an expression. Once both are written, the expression can be resolved to a value. As long as the variable is focused, the computed value is shown.",
+    "basicHeading1": "Datasets",
+    "basicInfo1-1": "Datasets can be viewed by assigning them to a variable.",
+    "basicInfo1-2": "Datasets can be viewed by assigning them to a variable. They consist of cases (displayed as rows), attributes (displayed as columns) und values (displayed as cells).",
+    "basicHeading2": "Renaming",
+    "basicInfo2-1": "The attributes (columns) of datasets can be renamed.",
+    "basicInfo2-2": "The attributes (columns) of datasets can be renamed. For this, note the old names and the new names.",
 
     "selectExplainer1": "Selecting means reducing a dataset to those cases or attributes which match a certain condition.",
     "selectHeader1": "Select cases by value",

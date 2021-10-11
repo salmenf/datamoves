@@ -80,6 +80,16 @@ const SCENARIO_STYLES: Record<string, ScenarioStyle> = {
     textPatternName: "identifier",
     style: "background: #FFECB3"
   },
+  identifierOldBasic: {
+    expressionPattern: /'bereich'/gi,
+    textPatternName: "oldIdentifier",
+    style: "background: #FFE0B2"
+  },
+  identifierNewBasic: {
+    expressionPattern: /'fach'/gi,
+    textPatternName: "newIdentifier",
+    style: "background: #FFF9C4",
+  },
   expression: {
     expressionPattern: /.*/gi,
     textPatternName: "expression",
@@ -209,7 +219,7 @@ const introduceDataset = ({statement, labelPrefix, continueSelector=null, nodeSt
   } 
 ]
 
-const twoStepWithHeader = ({statement1, statement2, styles=null, labelPrefix, i, continueSelector = null, nodeStyle=""}: {statement1: [string, string], statement2: [string, string], styles?: ScenarioStyle[], labelPrefix: string, i: number, continueSelector?: string, nodeStyle?: string}): Scenario["program"] => [
+const twoStepWithHeader = ({statement1, statement2, styles=null, labelPrefix, i, continueSelector = undefined, nodeStyle=""}: {statement1: [string, string], statement2: [string, string], styles?: ScenarioStyle[], labelPrefix: string, i: number, continueSelector?: string, nodeStyle?: string}): Scenario["program"] => [
   async host => {
     host.insertStatement(statement1)
     await host.updateComplete
@@ -226,7 +236,7 @@ const twoStepWithHeader = ({statement1, statement2, styles=null, labelPrefix, i,
   },
   host => {
     host.operationNodes[i].run()
-    return continueSelector? continueSelector: `#insert${i}`
+    return continueSelector !== undefined? continueSelector: `#insert${i}`
   }
 ]
 
@@ -236,7 +246,7 @@ export const scenarios: Scenario[] = [
     host => {
       host.explainer = explainer("", LABELS[host.lang]["basicExplainer1"])
       host.datasetsHidden = true
-      host.availablePresets = [PRESETS.at(-1), PRESETS.at(1)]
+      host.availablePresets = [PRESETS.at(-1), PRESETS[1], PRESETS[2]]
       return "#explainer"
     },
     host => {
@@ -257,14 +267,14 @@ export const scenarios: Scenario[] = [
         SCENARIO_STYLES.variable,
         SCENARIO_STYLES.value
       ]
-      host.operationNodes[0].header = LABELS[host.lang]["basicHeading1"]
-      host.operationNodes[0].info = LABELS[host.lang]["basicInfo1-1"]
+      host.operationNodes[0].header = LABELS[host.lang]["basicHeading0"]
+      host.operationNodes[0].info = LABELS[host.lang]["basicInfo0-1"]
       host.operationNodes[0].identifier = "mein_name"
       host.operationNodes[0].expression = "1 + 1"
       return "#main0"
     },
     host => {
-      host.operationNodes[0].info = LABELS[host.lang]["basicInfo1-2"]
+      host.operationNodes[0].info = LABELS[host.lang]["basicInfo0-2"]
       return "#run0"
     },
     async host => {
@@ -273,25 +283,31 @@ export const scenarios: Scenario[] = [
       return "#insert0"
     },
     async host => {
-      host.insertStatement(["ansicht_studierende", "D.stu"])
+      host.insertStatement(["studierende", "D.stu"])
       await host.updateComplete
-      host.operationNodes[1].header = LABELS[host.lang]["basicHeading2"]
-      host.operationNodes[1].info = LABELS[host.lang]["basicInfo2-1"]
+      host.operationNodes[1].header = LABELS[host.lang]["basicHeading1"]
+      host.operationNodes[1].info = LABELS[host.lang]["basicInfo1-1"]
       host.operationNodes[1].dynamicStyles = [SCENARIO_STYLES.dataset]
       return "#run1"
     },
     async host => {
-      host.operationNodes[1].info = LABELS[host.lang]["basicInfo2-2"]
+      host.operationNodes[1].info = LABELS[host.lang]["basicInfo1-2"]
       await host.operationNodes[1].run()
-      host.operationNodes[0].alwaysShowResult = true
-      host.operationNodes[1].alwaysShowResult = true
-      return null
-    }
+      return "#insert1"
+    },
+    ...twoStepWithHeader({
+      statement1: ["umbenannt", "studierende"],
+      statement2: ["umbenannt", "studierende.rename(columns={'bereich': 'fach'})"],
+      styles: [SCENARIO_STYLES.identifierOldBasic, SCENARIO_STYLES.identifierNewBasic],
+      labelPrefix: "basic",
+      i: 2,
+      continueSelector: null
+    }),
   ], [DATASETS[0]]),
 
   new Scenario("selectScenario", [
     async host => {
-      host.availablePresets = [PRESETS.at(-1), PRESETS[1], PRESETS[2]]
+      host.availablePresets = [PRESETS.at(-1), PRESETS[1], PRESETS[2], PRESETS[3]]
       host.explainer = explainer("σ/π", LABELS[host.lang]["selectExplainer1"])
       await host.updateComplete
       return "#insert0"
@@ -333,7 +349,7 @@ export const scenarios: Scenario[] = [
 
   new Scenario("mapScenario", [
     async host => {
-      host.availablePresets = [PRESETS.at(-1), ...PRESETS.slice(0, 4)]
+      host.availablePresets = [PRESETS.at(-1), ...PRESETS.slice(0, 5)]
       host.explainer = explainer("λ", LABELS[host.lang]["mapExplainer"])
       await host.updateComplete
       return "#insert0"
@@ -366,7 +382,7 @@ export const scenarios: Scenario[] = [
 
   new Scenario("calculateScenario", [
     async host => {
-      host.availablePresets = [PRESETS.at(-1), ...PRESETS.slice(0, 6)]
+      host.availablePresets = [PRESETS.at(-1), ...PRESETS.slice(0, 7)]
       host.explainer = explainer("κ/γ", LABELS[host.lang]["calculateExplainer"])
       await host.updateComplete
       return "#insert0"
@@ -415,7 +431,7 @@ export const scenarios: Scenario[] = [
 
   new Scenario("combineScenario", [
     async host => {
-      host.availablePresets = [PRESETS.at(-1), ...PRESETS.slice(0, 9)]
+      host.availablePresets = [PRESETS.at(-1), ...PRESETS.slice(0, 10)]
       host.explainer = explainer("⊝", LABELS[host.lang]["combineExplainer"])
       window.scrollTo(0, 0)
       await host.updateComplete

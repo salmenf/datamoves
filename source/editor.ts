@@ -1427,6 +1427,12 @@ export const PRESETS = [
     template: "D.a"
   },
   {
+    name: "rename",
+    sign: "ρ",
+    pattern: /([a-zA-Z_]\w*)\.rename\(columns=\{(.*)\}\)/,
+    template: "D.a.rename(columns={'name': 'newname'})"
+  },
+  {
     name: "select",
     sign: "σ",
     pattern: /([a-zA-Z_]\w*)(?:\[(.*)\])+/,
