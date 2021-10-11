@@ -136,7 +136,7 @@ export const LABELS = {
     "basicHeader1": "Datensätze",
     "basicInfo1-1": "Datensätze können betrachtet werden, indem sie einer Variable zugewiesen werden.",
     "basicInfo1-2": "Datensätze können betrachtet werden, indem sie einer Variable zugewiesen werden. Sie bestehen aus Fällen (angezeigt als Zeilen), Attributen (angezeigt als Spalten) und Werten (angezeigt als Zellen).",
-    "basicHeader3": "Umbenennen",
+    "basicHeader2": "Attribute umbenennen",
     "basicInfo2-1": "Die Attribute (Spalten) von Datensätzen können umbenannt werden.",
     "basicInfo2-2": "Die Attribute (Spalten) von Datensätzen können umbenannt werden. Dazu werden die alten Namen angegeben, außerdem die neuen Namen.",
 
@@ -303,7 +303,7 @@ export const LABELS = {
     "basicHeader1": "Datasets",
     "basicInfo1-1": "Datasets can be viewed by assigning them to a variable.",
     "basicInfo1-2": "Datasets can be viewed by assigning them to a variable. They consist of cases (displayed as rows), attributes (displayed as columns) und values (displayed as cells).",
-    "basicHeader2": "Renaming",
+    "basicHeader2": "Renaming attributes",
     "basicInfo2-1": "The attributes (columns) of datasets can be renamed.",
     "basicInfo2-2": "The attributes (columns) of datasets can be renamed. For this, note the old names and the new names.",
 

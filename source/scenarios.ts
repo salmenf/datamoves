@@ -278,7 +278,6 @@ export const scenarios: Scenario[] = [
       return "#run0"
     },
     async host => {
-      
       await host.operationNodes[0].run()
       return "#insert0"
     },
