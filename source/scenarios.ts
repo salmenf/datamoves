@@ -267,7 +267,7 @@ export const scenarios: Scenario[] = [
         SCENARIO_STYLES.variable,
         SCENARIO_STYLES.value
       ]
-      host.operationNodes[0].header = LABELS[host.lang]["basicHeading0"]
+      host.operationNodes[0].header = LABELS[host.lang]["basicHeader0"]
       host.operationNodes[0].info = LABELS[host.lang]["basicInfo0-1"]
       host.operationNodes[0].identifier = "mein_name"
       host.operationNodes[0].expression = "1 + 1"
@@ -285,7 +285,7 @@ export const scenarios: Scenario[] = [
     async host => {
       host.insertStatement(["studierende", "D.stu"])
       await host.updateComplete
-      host.operationNodes[1].header = LABELS[host.lang]["basicHeading1"]
+      host.operationNodes[1].header = LABELS[host.lang]["basicHeader1"]
       host.operationNodes[1].info = LABELS[host.lang]["basicInfo1-1"]
       host.operationNodes[1].dynamicStyles = [SCENARIO_STYLES.dataset]
       return "#run1"
