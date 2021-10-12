@@ -1,6 +1,6 @@
 # datamoves: Interactive cheat sheet for data moves
 
-This is a companion piece for my Master's thesis. It is a website introduces the concept of Data Moves. 
+This is a companion piece for my Master's thesis. It is a website that introduces the concept of Data Moves. 
 
 Data Moves are actions in data science which change the content, values or structure of a dataset.
 
